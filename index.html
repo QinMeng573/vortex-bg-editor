@@ -1,8 +1,8 @@
 <!doctype html>
 <!--
-  旋涡背景编辑器 · Vortex Background Editor（公开版）
-  流体背景引擎：旋转/脉冲等运动块 + 迭代域扭曲 + paint 混色，
-  与颜色轨迹 / 颜色池 / 双色轮播系统。全部为原创实现，MIT 开源。
+  旋涡背景编辑器 · Vortex Background Editor
+  本文件中的着色器（极坐标旋涡 / 涟漪 / 分层正弦扭曲等通用技法）与全部预设
+  均为原创实现，MIT 开源，可自由用于个人与商业项目。
   MIT License — Copyright (c) 2026 Vortex Background Editor contributors.
   Permission is hereby granted, free of charge, to any person obtaining a copy
   of this software to use, copy, modify, merge, publish and distribute it,
@@ -21,96 +21,190 @@
     <style>
       :root{
         color-scheme: dark;
-        --bg:#0c0914; --panel:#150f22; --panel-2:#1b142e;
-        --gold:#d9a441; --gold-soft:rgba(217,164,65,.38); --gold-faint:rgba(217,164,65,.16);
-        --ink:#efe7d7; --muted:#a79bc0; --line:rgba(217,164,65,.22);
-        --field:#0d0a18; --danger:#ff8a7a;
+        --bg:#0c0914;
+        --panel:#150f22;
+        --panel-2:#1b142e;
+        --gold:#d9a441;
+        --gold-soft:rgba(217,164,65,.38);
+        --gold-faint:rgba(217,164,65,.16);
+        --ink:#efe7d7;
+        --muted:#a79bc0;
+        --line:rgba(217,164,65,.22);
+        --field:#0d0a18;
+        --danger:#ff8a7a;
       }
       *{box-sizing:border-box}
       html,body{height:100%}
-      body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Serif SC","Songti SC",serif;overflow:hidden}
+      body{
+        margin:0;background:var(--bg);color:var(--ink);
+        font-family:"Noto Serif SC","Songti SC",serif;
+        overflow:hidden;
+      }
       button,select,input,textarea{font-family:inherit}
       button,[role="button"],select,input:not([type="checkbox"],[type="radio"]){min-height:2.25rem}
+
+      /* ---------- stage ---------- */
       #stage{position:fixed;inset:0}
       #stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
       #swCanvas{image-rendering:pixelated}
       .hidden-canvas{display:none !important}
-      #status{position:fixed;left:12px;bottom:12px;z-index:30;display:flex;align-items:center;gap:8px;background:rgba(12,9,20,.82);border:1px solid var(--line);padding:7px 12px;border-radius:3px;font-size:12px;letter-spacing:.04em;color:var(--muted);backdrop-filter:blur(4px);max-width:min(92vw,560px)}
+
+      /* ---------- status bar ---------- */
+      #status{
+        position:fixed;left:12px;bottom:12px;z-index:30;
+        display:flex;align-items:center;gap:8px;
+        background:rgba(12,9,20,.82);border:1px solid var(--line);
+        padding:7px 12px;border-radius:3px;
+        font-size:12px;letter-spacing:.04em;color:var(--muted);
+        backdrop-filter:blur(4px);max-width:min(92vw,560px);
+      }
       #status .dot{width:8px;height:8px;border-radius:50%;background:#7ee2a0;flex:none;box-shadow:0 0 8px rgba(126,226,160,.8)}
       #status.warn .dot{background:var(--gold);box-shadow:0 0 8px rgba(217,164,65,.8)}
       #status b{color:var(--ink);font-weight:700}
       #status .fps{color:var(--gold);font-variant-numeric:tabular-nums}
-      #panelToggle{position:fixed;top:14px;right:14px;z-index:40;display:none;align-items:center;gap:8px;background:rgba(21,15,34,.92);color:var(--gold);border:1px solid var(--gold-soft);border-radius:3px;padding:9px 14px;cursor:pointer;font-size:13px;letter-spacing:.08em}
+
+      /* ---------- panel toggle ---------- */
+      #panelToggle{
+        position:fixed;top:14px;right:14px;z-index:40;
+        display:none;align-items:center;gap:8px;
+        background:rgba(21,15,34,.92);color:var(--gold);
+        border:1px solid var(--gold-soft);border-radius:3px;
+        padding:9px 14px;cursor:pointer;font-size:13px;letter-spacing:.08em;
+      }
       #panelToggle:hover{background:var(--panel-2)}
       #panelToggle.show{display:flex}
       #panelToggle svg{width:16px;height:16px;flex:none}
-      #panel{position:fixed;top:0;right:0;bottom:0;width:316px;z-index:35;background:linear-gradient(168deg,#1a1230 0%,var(--panel) 46%,#0e0a1a 100%);border-left:1px solid var(--gold-soft);box-shadow:-18px 0 44px rgba(0,0,0,.55);overflow-y:auto;overflow-x:hidden;padding:20px 18px 26px;transition:transform .32s ease;scrollbar-width:thin;scrollbar-color:var(--gold-soft) transparent}
+
+      /* ---------- control panel ---------- */
+      #panel{
+        position:fixed;top:0;right:0;bottom:0;width:308px;z-index:35;
+        background:linear-gradient(168deg,#1a1230 0%,var(--panel) 46%,#0e0a1a 100%);
+        border-left:1px solid var(--gold-soft);
+        box-shadow:-18px 0 44px rgba(0,0,0,.55);
+        overflow-y:auto;overflow-x:hidden;
+        padding:20px 18px 26px;
+        transition:transform .32s ease;
+        scrollbar-width:thin;scrollbar-color:var(--gold-soft) transparent;
+      }
       #panel.hidden{transform:translateX(105%)}
       #panel::-webkit-scrollbar{width:6px}
       #panel::-webkit-scrollbar-thumb{background:var(--gold-soft);border-radius:3px}
+
       .p-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-      .p-head h1{margin:0;font-size:21px;line-height:1.25;font-weight:700;letter-spacing:.06em}
-      .p-head h1 .en{display:block;font-family:"Cinzel",serif;font-size:10.5px;font-weight:500;letter-spacing:.34em;color:var(--gold);margin-top:5px;text-transform:uppercase}
+      .p-head h1{
+        margin:0;font-size:21px;line-height:1.25;font-weight:700;letter-spacing:.06em;
+      }
+      .p-head h1 .en{
+        display:block;font-family:"Cinzel",serif;font-size:10.5px;font-weight:500;
+        letter-spacing:.34em;color:var(--gold);margin-top:5px;text-transform:uppercase;
+      }
       .p-sub{margin:9px 0 0;font-size:12px;line-height:1.7;color:var(--muted)}
-      #collapseBtn{flex:none;background:none;border:1px solid var(--line);color:var(--muted);width:36px;height:36px;min-height:36px;border-radius:3px;cursor:pointer;font-size:15px;line-height:1}
+      #collapseBtn{
+        flex:none;background:none;border:1px solid var(--line);color:var(--muted);
+        width:36px;height:36px;min-height:36px;border-radius:3px;cursor:pointer;font-size:15px;line-height:1;
+      }
       #collapseBtn:hover{color:var(--gold);border-color:var(--gold-soft)}
+
       .rule{height:1px;background:linear-gradient(90deg,transparent,var(--gold-soft),transparent);margin:16px 0}
       section{margin-bottom:18px}
-      h2{margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.28em;color:var(--gold);display:flex;align-items:center;gap:9px}
+      h2{
+        margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.28em;color:var(--gold);
+        display:flex;align-items:center;gap:9px;
+      }
       h2::after{content:"";flex:1;height:1px;background:var(--gold-faint)}
-      select{width:100%;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:8px 10px;font-size:13.5px;cursor:pointer}
-      select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
-      .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-      .mode-btn{background:var(--field);color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:8px 6px;font-size:12.5px;cursor:pointer;min-height:36px;letter-spacing:.03em}
-      .mode-btn:hover{color:var(--ink);border-color:var(--gold-soft)}
-      .mode-btn.active{color:var(--gold);border-color:var(--gold);background:linear-gradient(180deg,#2a1e08,#1d1507)}
+
+      select{
+        width:100%;background:var(--field);color:var(--ink);
+        border:1px solid var(--line);border-radius:3px;
+        padding:8px 10px;font-size:13.5px;cursor:pointer;
+      }
+      select:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-visible{
+        outline:2px solid var(--gold);outline-offset:1px;
+      }
+
+      /* colors */
       .color-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
       .color-row label{flex:0 0 52px;font-size:13px;color:var(--muted)}
-      .color-row input[type="color"]{flex:none;width:52px;height:36px;min-height:36px;padding:2px;background:var(--field);border:1px solid var(--line);border-radius:3px;cursor:pointer}
-      .color-row input[type="text"]{flex:1;min-width:0;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:7px 9px;font-size:13px;font-variant-numeric:tabular-nums;text-transform:uppercase}
-      .driver{font-size:11.5px;color:var(--muted);margin:-3px 0 9px 62px}
-      .driver b{color:var(--gold);font-weight:700}
+      .color-row input[type="color"]{
+        flex:none;width:52px;height:36px;min-height:36px;padding:2px;
+        background:var(--field);border:1px solid var(--line);border-radius:3px;cursor:pointer;
+      }
+      .color-row input[type="text"]{
+        flex:1;min-width:0;background:var(--field);color:var(--ink);
+        border:1px solid var(--line);border-radius:3px;padding:7px 9px;
+        font-size:13px;font-variant-numeric:tabular-nums;text-transform:uppercase;
+      }
+
+      /* sliders */
       .ctl{margin-bottom:12px}
       .ctl-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
       .ctl-head label{font-size:13px;color:var(--ink)}
       .ctl-head label .unit{color:var(--muted);font-size:11px;margin-left:5px}
       .ctl-body{display:flex;align-items:center;gap:9px}
-      .ctl-body input[type="range"]{flex:1;min-width:0;min-height:36px;accent-color:var(--gold);cursor:pointer;-webkit-appearance:none;appearance:none;background:transparent;height:36px}
+      .ctl-body input[type="range"]{
+        flex:1;min-width:0;min-height:36px;accent-color:var(--gold);cursor:pointer;
+        -webkit-appearance:none;appearance:none;background:transparent;height:36px;
+      }
       .ctl-body input[type="range"]::-webkit-slider-runnable-track{height:4px;background:linear-gradient(90deg,var(--gold-soft),var(--gold-faint));border-radius:2px}
-      .ctl-body input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-6px;border-radius:50%;background:var(--gold);border:2px solid #0c0914;box-shadow:0 0 0 1px var(--gold-soft)}
+      .ctl-body input[type="range"]::-webkit-slider-thumb{
+        -webkit-appearance:none;width:16px;height:16px;margin-top:-6px;border-radius:50%;
+        background:var(--gold);border:2px solid #0c0914;box-shadow:0 0 0 1px var(--gold-soft);
+      }
       .ctl-body input[type="range"]::-moz-range-track{height:4px;background:var(--gold-soft);border-radius:2px}
       .ctl-body input[type="range"]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--gold);border:2px solid #0c0914}
-      .ctl-body input[type="number"]{flex:0 0 66px;width:66px;background:var(--field);color:var(--gold);border:1px solid var(--line);border-radius:3px;padding:6px 7px;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+      .ctl-body input[type="number"]{
+        flex:0 0 66px;width:66px;background:var(--field);color:var(--gold);
+        border:1px solid var(--line);border-radius:3px;padding:6px 7px;
+        font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;
+        -moz-appearance:textfield;appearance:textfield;
+      }
       .ctl-body input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none}
+
+      /* buttons */
       .btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-      .btn{background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:9px 8px;font-size:13px;letter-spacing:.05em;cursor:pointer;min-height:38px}
+      .btn{
+        background:var(--field);color:var(--ink);border:1px solid var(--line);
+        border-radius:3px;padding:9px 8px;font-size:13px;letter-spacing:.05em;cursor:pointer;
+        min-height:38px;
+      }
       .btn:hover{border-color:var(--gold-soft);color:var(--gold)}
       .btn:active{transform:translateY(1px)}
       .btn.primary{background:linear-gradient(180deg,#2a1e08,#1d1507);border-color:var(--gold-soft);color:var(--gold)}
       .btn.primary:hover{color:#f4cd7d}
       .btn.wide{grid-column:1 / -1}
-      textarea{width:100%;min-height:104px;resize:vertical;background:var(--field);color:#cfe3c2;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.55}
+
+      textarea{
+        width:100%;min-height:104px;resize:vertical;
+        background:var(--field);color:#cfe3c2;border:1px solid var(--line);border-radius:3px;
+        padding:9px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+        font-size:11.5px;line-height:1.55;
+      }
       .hint{font-size:11.5px;line-height:1.75;color:var(--muted);margin:8px 0 0}
       .hint b{color:var(--gold);font-weight:700}
-      kbd{font-family:inherit;font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 5px;color:var(--ink);background:var(--field)}
-      .ce-block{border:1px solid var(--gold-faint);border-radius:3px;padding:10px 11px;margin-bottom:10px;background:rgba(13,10,24,.5)}
-      .ce-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-      .ce-head .ce-name{font-size:13px;color:var(--ink)}
-      .switch{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);cursor:pointer}
-      .switch input[type="checkbox"]{width:18px;height:18px;min-height:18px;accent-color:var(--gold);cursor:pointer}
-      .mini-ctl{display:flex;align-items:center;gap:8px;margin:6px 0}
-      .mini-ctl label{flex:0 0 74px;font-size:12px;color:var(--muted)}
-      .mini-ctl input[type="range"]{flex:1;min-width:0;accent-color:var(--gold);height:28px;cursor:pointer}
-      .mini-ctl .val{flex:0 0 40px;text-align:right;font-size:12px;color:var(--gold);font-variant-numeric:tabular-nums}
-      .frame-row{display:flex;align-items:center;gap:8px;margin:6px 0}
-      .frame-row .pct{flex:0 0 38px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-      .frame-row input[type="color"]{width:46px;height:30px;min-height:30px;padding:2px;background:var(--field);border:1px solid var(--line);border-radius:3px;cursor:pointer}
-      .frame-row input[type="text"]{flex:1;min-width:0;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:5px 8px;font-size:12px;text-transform:uppercase}
-      #toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);z-index:60;background:rgba(21,15,34,.95);border:1px solid var(--gold-soft);color:var(--ink);padding:10px 18px;border-radius:3px;font-size:13.5px;letter-spacing:.04em;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;max-width:92vw;text-align:center}
+      kbd{
+        font-family:inherit;font-size:11px;border:1px solid var(--line);border-bottom-width:2px;
+        border-radius:3px;padding:0 5px;color:var(--ink);background:var(--field);
+      }
+
+      /* toast */
+      #toast{
+        position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);z-index:60;
+        background:rgba(21,15,34,.95);border:1px solid var(--gold-soft);color:var(--ink);
+        padding:10px 18px;border-radius:3px;font-size:13.5px;letter-spacing:.04em;
+        opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;
+        max-width:92vw;text-align:center;
+      }
       #toast.show{opacity:1;transform:translate(-50%,0)}
       #toast.err{border-color:var(--danger);color:#ffd9d3}
-      @media (max-width:560px){#panel{width:min(316px,92vw)}#status{bottom:auto;top:12px;left:12px}}
-      @media (prefers-reduced-motion:reduce){#panel{transition:none}#toast{transition:none}}
+
+      @media (max-width:560px){
+        #panel{width:min(308px,92vw)}
+        #status{bottom:auto;top:12px;left:12px}
+      }
+      @media (prefers-reduced-motion:reduce){
+        #panel{transition:none}
+        #toast{transition:none}
+      }
     </style>
   </head>
   <body>
@@ -130,7 +224,7 @@
       <div class="p-head">
         <div>
           <h1>旋涡背景编辑器<span class="en">Vortex BG Editor</span></h1>
-          <p class="p-sub">流体旋涡 / 涟漪动态背景 · 旋转搅动 + 迭代域扭曲 + paint 混色，调好即可导出独立 HTML 嵌进自己的游戏或网页。</p>
+          <p class="p-sub">小丑牌式动态像素背景 · 自研 WebGL 着色器，调好即可导出独立 HTML 嵌进自己的游戏或网页。</p>
         </div>
         <button id="collapseBtn" type="button" aria-label="收起面板" title="收起面板 (H)">»</button>
       </div>
@@ -139,18 +233,13 @@
 
       <section>
         <h2>运动模式</h2>
-        <div class="mode-grid" id="modeGrid"></div>
+        <select id="modeSel" aria-label="运动模式"></select>
       </section>
 
       <section>
-        <h2>定版预设</h2>
-        <div class="btn-grid">
-          <button class="btn primary" id="presetBattleBtn" type="button">战斗定版 · 涟漪</button>
-          <button class="btn primary" id="presetMenuBtn" type="button">主菜单定版 · 旋涡</button>
-        </div>
-        <div style="height:8px"></div>
-        <select id="presetSel" aria-label="自创预设">
-          <option value="">— 自创预设 —</option>
+        <h2>预设</h2>
+        <select id="presetSel" aria-label="预设">
+          <option value="">— 选择预设 —</option>
         </select>
       </section>
 
@@ -161,13 +250,11 @@
           <input type="color" id="c1" />
           <input type="text" id="c1hex" spellcheck="false" aria-label="主色十六进制值" />
         </div>
-        <p class="driver" id="driver1">当前司机：<b>手动</b></p>
         <div class="color-row">
           <label for="c2">亮色</label>
           <input type="color" id="c2" />
           <input type="text" id="c2hex" spellcheck="false" aria-label="亮色十六进制值" />
         </div>
-        <p class="driver" id="driver2">当前司机：<b>手动</b></p>
         <div class="color-row">
           <label for="c3">暗色</label>
           <input type="color" id="c3" />
@@ -177,60 +264,7 @@
 
       <section>
         <h2>参数</h2>
-        <div id="slidersBase"></div>
-      </section>
-
-      <section>
-        <h2>涟漪参数</h2>
-        <div id="slidersRipple"></div>
-      </section>
-
-      <section>
-        <h2>其他</h2>
-        <div id="slidersOther"></div>
-      </section>
-
-      <section>
-        <h2>颜色时间轨迹</h2>
-        <div class="ce-block">
-          <div class="ce-head"><span class="ce-name">主色轨迹</span>
-            <label class="switch"><input type="checkbox" id="track1On" />启用</label></div>
-          <div class="mini-ctl"><label for="track1Dur">循环时长</label><input type="range" id="track1Dur" min="4" max="60" step="1" /><span class="val" id="track1DurVal"></span></div>
-          <div id="track1Frames"></div>
-        </div>
-        <div class="ce-block">
-          <div class="ce-head"><span class="ce-name">亮色轨迹</span>
-            <label class="switch"><input type="checkbox" id="track2On" />启用</label></div>
-          <div class="mini-ctl"><label for="track2Dur">循环时长</label><input type="range" id="track2Dur" min="4" max="60" step="1" /><span class="val" id="track2DurVal"></span></div>
-          <div id="track2Frames"></div>
-        </div>
-      </section>
-
-      <section>
-        <h2>颜色池</h2>
-        <div class="ce-block">
-          <div class="ce-head"><span class="ce-name">主色池</span>
-            <label class="switch"><input type="checkbox" id="pool1On" />启用</label></div>
-          <div class="mini-ctl"><label for="pool1Dwell">停留</label><input type="range" id="pool1Dwell" min="0.5" max="10" step="0.1" /><span class="val" id="pool1DwellVal"></span></div>
-          <div class="mini-ctl"><label for="pool1Fade">渐变</label><input type="range" id="pool1Fade" min="0.5" max="8" step="0.1" /><span class="val" id="pool1FadeVal"></span></div>
-        </div>
-        <div class="ce-block">
-          <div class="ce-head"><span class="ce-name">亮色池</span>
-            <label class="switch"><input type="checkbox" id="pool2On" />启用</label></div>
-          <div class="mini-ctl"><label for="pool2Dwell">停留</label><input type="range" id="pool2Dwell" min="0.5" max="10" step="0.1" /><span class="val" id="pool2DwellVal"></span></div>
-          <div class="mini-ctl"><label for="pool2Fade">渐变</label><input type="range" id="pool2Fade" min="0.5" max="8" step="0.1" /><span class="val" id="pool2FadeVal"></span></div>
-        </div>
-      </section>
-
-      <section>
-        <h2>双色自动轮播</h2>
-        <div class="ce-block">
-          <div class="ce-head"><span class="ce-name">遍历自创预设配色</span>
-            <label class="switch"><input type="checkbox" id="carOn" />启用</label></div>
-          <div class="mini-ctl"><label for="carDwell">每套停留</label><input type="range" id="carDwell" min="3" max="20" step="0.5" /><span class="val" id="carDwellVal"></span></div>
-          <div class="mini-ctl"><label for="carFade">渐变</label><input type="range" id="carFade" min="1" max="8" step="0.5" /><span class="val" id="carFadeVal"></span></div>
-          <p class="hint" id="carName">未开启</p>
-        </div>
+        <div id="sliders"></div>
       </section>
 
       <section>
@@ -250,9 +284,9 @@
           <button class="btn" id="applyJsonBtn" type="button">应用 JSON</button>
           <button class="btn primary wide" id="exportHtmlBtn" type="button">一键导出独立 HTML 背景</button>
         </div>
-        <p class="hint">导出的 HTML 只有全屏背景、无编辑器面板，双击即可运行（MIT 开源）。</p>
+        <p class="hint">导出的 HTML 只有全屏背景、无编辑器面板，双击即可运行，可直接用作游戏主菜单或网页背景（MIT 开源）。</p>
         <div style="height:10px"></div>
-        <textarea id="jsonBox" spellcheck="false" placeholder="参数 JSON 会出现在这里；也可以把调参台 / 别人分享的 JSON 粘贴进来，点「应用 JSON」。"></textarea>
+        <textarea id="jsonBox" spellcheck="false" placeholder="参数 JSON 会出现在这里；也可以把别人分享的 JSON 粘贴进来，点「应用 JSON」。"></textarea>
       </section>
 
       <div class="rule"></div>
@@ -264,10 +298,9 @@
     <script>
     'use strict';
     /* ================================================================
-       流体引擎：运动块（旋涡/涟漪/波涌/潮汐/圣光/万花筒/烟雾）
-       + 迭代域扭曲 + paint 混色（烟雾用 smoke 尾段）。
-       颜色引擎：轨迹 / 颜色池 / 双色轮播，全部走 HSL 最短路径
-       lerpColour + smoothstep 缓动，只有渐变没有突变。
+       着色器：原创实现。手法均为图形学公共技法——极坐标旋涡扭曲、
+       同心涟漪、分层正弦域扭曲、角度折叠（万花筒）、对数半径隧道、
+       花瓣调制玫瑰窗。预设名称与配色均为自创。MIT 开源。
        ================================================================ */
     var VERT_SRC = [
       'attribute vec2 a_pos;',
@@ -278,410 +311,202 @@
       'precision highp float;',
       'uniform vec2  u_res;',
       'uniform float u_time;',
-      'uniform float u_spin_time;',
       'uniform int   u_mode;',
       'uniform vec3  u_c1;',
       'uniform vec3  u_c2;',
       'uniform vec3  u_c3;',
       'uniform float u_contrast;',
-      'uniform float u_spin_amount;',
-      'uniform float u_spin_ease;',
-      'uniform float u_pixelFac;',
-      'uniform float u_m_amp;',
-      'uniform float u_m_rate;',
-      'uniform float u_r_freq;',
-      'uniform float u_r_rate;',
-      'uniform float u_r_amp;',
-      'uniform float u_flash;',
-      'uniform vec2  u_offset;',
+      'uniform float u_spin;',
+      'uniform float u_scale;',
+      'uniform float u_warp;',
+      'uniform float u_blocks;',
+      '',
+      'float segFold(float a, float seg){',
+      '  float w = 6.2831853 / seg;',
+      '  float m = mod(a, w);',
+      '  return abs(m - w * 0.5);',
+      '}',
       '',
       'void main(){',
-      '  float pixel_size = length(u_res) / u_pixelFac;',
-      '  vec2 uv = (floor(gl_FragCoord.xy / pixel_size) * pixel_size - 0.5 * u_res) / length(u_res);',
-      '  uv += u_offset;',
-      '  float uv_len = length(uv);',
-      '  vec2 mid = (u_res / length(u_res)) / 2.0;',
-      '  float speed = u_spin_time * u_spin_ease * 0.2 + 302.2;',
-      '  vec2 dir = uv / max(uv_len, 0.0001);',
+      '  float aspect = u_res.x / u_res.y;',
+      '  float bw = u_blocks;',
+      '  float bh = max(2.0, floor(bw / aspect));',
+      '  vec2 cell = floor(gl_FragCoord.xy / u_res * vec2(bw, bh));',
+      '  vec2 uv = (cell + 0.5) / vec2(bw, bh);',
+      '  vec2 p = (uv - 0.5) * vec2(aspect, 1.0) * 2.0;',
+      '  p *= u_scale;',
+      '  float t = u_time;',
+      '',
+      '  /* 通用域扭曲：分层正弦扰动坐标 */',
+      '  vec2 q = p;',
+      '  q += u_warp * 0.16 * vec2(',
+      '        sin(q.y * 2.7 + t * 0.70),',
+      '        cos(q.x * 2.7 - t * 0.62));',
+      '  q += u_warp * 0.07 * vec2(',
+      '        sin(q.y * 6.1 - t * 1.05),',
+      '        cos(q.x * 6.1 + t * 0.90));',
+      '',
+      '  float r = length(q);',
+      '  float a = atan(q.y, q.x);',
+      '  float f = 0.0;',
+      '  float glow = 0.0;',
       '',
       '  if (u_mode == 0) {',
-      '    float angle = atan(uv.y, uv.x) + speed - u_spin_ease * 20.0 * (u_spin_amount * uv_len + (1.0 - u_spin_amount));',
-      '    uv = vec2(uv_len * cos(angle) + mid.x, uv_len * sin(angle) + mid.y) - mid;',
+      '    /* 一·旋涡：角度随半径回收，形成旋转臂 */',
+      '    f = sin(3.0 * a + u_spin * 7.0 / (r + 0.50) + 2.2 * r - 1.35 * t);',
+      '    f += 0.30 * sin(7.0 * r - 2.0 * t);',
+      '    f *= 0.78;',
       '  } else if (u_mode == 1) {',
-      '    float pulse = sin(uv_len * u_r_freq - speed * u_r_rate) * u_r_amp * u_spin_amount * u_m_amp;',
-      '    uv += dir * pulse;',
+      '    /* 二·涟漪：同心波纹 + 角度微扰 */',
+      '    f = sin(10.0 * r - 2.1 * t + u_spin * 3.0 * sin(3.0 * a + t * 0.4));',
+      '    f += 0.25 * sin(17.0 * r - 3.1 * t);',
+      '    f *= 0.82;',
       '  } else if (u_mode == 2) {',
-      '    float sway = sin(uv.y * 9.0 + speed * 3.0) * 0.045 * (0.4 + u_spin_amount);',
-      '    uv = vec2(uv.x + (sway + u_spin_time * 0.03) * u_m_amp, uv.y + cos(uv.x * 7.0 + speed * 2.2) * 0.03 * u_m_amp);',
+      '    /* 三·烟雾：多层正弦叠加的缓流场 + 中心呼吸微光 */',
+      '    float s = sin(q.x * 1.9 + t * 0.40)',
+      '            + sin(q.y * 2.4 - t * 0.31)',
+      '            + sin((q.x + q.y) * 1.25 + t * 0.52)',
+      '            + sin(length(q) * 3.2 - t * 0.60);',
+      '    f = s * 0.25;',
+      '    float breathe = 0.5 + 0.5 * sin(t * 0.9);',
+      '    glow = exp(-length(p) * 2.3) * (0.08 + 0.15 * breathe);',
       '  } else if (u_mode == 3) {',
-      '    float tm = (speed - 302.2) * u_m_rate;',
-      '    float zoom = 1.0 + sin(tm * 0.9) * 0.20 * (0.4 + u_spin_amount) * u_m_amp;',
-      '    uv *= zoom;',
+      '    /* 四·波浪：横向波列被纵向波调制 */',
+      '    f = sin(q.x * 3.1 + 1.7 * sin(q.y * 2.3 + t * 0.8) + t * 1.0) * 0.72',
+      '      + sin(q.y * 5.2 - t * 1.35) * 0.28;',
       '  } else if (u_mode == 4) {',
-      '    float tm = (speed - 302.2) * u_m_rate;',
-      '    float rays = sin(atan(uv.y, uv.x) * 9.0 - tm * 1.6) * 0.075 * u_spin_amount * u_m_amp;',
-      '    uv += dir * rays * (0.3 + uv_len);',
+      '    /* 五·万花筒：六重角度折叠 */',
+      '    float aa = segFold(a + u_spin * 1.4 / (r + 0.6), 6.0);',
+      '    vec2 kp = r * vec2(cos(aa), sin(aa));',
+      '    f = sin(kp.x * 6.0 - t * 1.1) * 0.60',
+      '      + sin(kp.y * 8.0 + r * 4.0 - t * 1.5) * 0.40;',
       '  } else if (u_mode == 5) {',
-      '    float kseg = 0.7853981;',
-      '    float ka = abs(mod(atan(uv.y, uv.x) + u_spin_time * 0.15 * u_m_rate, kseg) - kseg * 0.5);',
-      '    uv = uv_len * vec2(cos(ka), sin(ka));',
-      '    uv = floor(uv * u_pixelFac * 0.28) / (u_pixelFac * 0.28);',
+      '    /* 六·隧道：对数半径环带向内流动 */',
+      '    float lr = log(r + 0.09);',
+      '    f = sin(lr * 8.5 - 2.3 * t) * 0.72',
+      '      + sin(a * 5.0 + u_spin * 3.0 + lr * 3.0) * 0.28;',
       '  } else {',
-      '    float spt = u_time * u_m_rate;',
-      '    float m6 = min(6.0, spt);',
-      '    float ang = atan(uv.y, uv.x) + (2.2 + 0.4 * m6) * uv_len - 1.0 - spt * 0.05 - m6 * spt * 0.02;',
-      '    uv = vec2(uv_len * cos(ang) + mid.x, uv_len * sin(ang) + mid.y) - mid;',
+      '    /* 七·玫瑰窗：八重折叠 + 花瓣半径调制 + 辐条 */',
+      '    float aa = segFold(a, 8.0);',
+      '    float rr = r * (0.86 + 0.26 * cos(aa * 8.0));',
+      '    f = sin(rr * 10.0 - 1.25 * t + u_spin * 2.0 * cos(aa * 8.0)) * 0.62',
+      '      + sin(aa * 24.0 + r * 3.0) * 0.20',
+      '      + sin(r * 22.0 - 1.8 * t) * 0.18;',
       '  }',
       '',
-      '  uv *= 30.0;',
-      '  float t = (u_mode == 6) ? (u_time * 6.0 * u_m_rate + 1033.0) : u_time;',
-      '  vec2 uv2 = vec2(uv.x + uv.y);',
-      '  for (int i = 0; i < 5; i++) {',
-      '    uv2 += sin(max(uv.x, uv.y)) + uv;',
-      '    uv += 0.5 * vec2(cos(5.1123314 + 0.353 * uv2.y + t * 0.131121), sin(uv2.x - t * 0.11361));',
-      '    uv -= vec2(cos(uv.x + uv.y) - sin(uv.x * 0.711 - uv.y));',
-      '  }',
-      '',
-      '  vec3 col;',
-      '  if (u_mode == 6) {',
-      '    float smoke_res = clamp(1.5 + length(uv) * 0.12 - 0.17 * min(10.0, (u_time + 12.0) * 1.2 - 4.0), -2.0, 2.0);',
-      '    if (smoke_res < 0.2) smoke_res = (smoke_res - 0.2) * 0.6 + 0.2;',
-      '    float sc1p = max(0.0, 1.0 - 2.0 * abs(1.0 - smoke_res));',
-      '    float sc2p = max(0.0, 1.0 - 2.0 * smoke_res);',
-      '    float cb = 1.0 - min(1.0, sc1p + sc2p);',
-      '    vec3 ret = u_c1 * sc1p + u_c2 * sc2p + vec3(0.186, 0.233, 0.242) * cb;',
-      '    float mf = max(sc1p, sc2p);',
-      '    float mod_flash = max(u_flash * 0.8, mf * 5.0 - 4.4) + u_flash * mf;',
-      '    col = ret * (1.0 - mod_flash) + mod_flash * vec3(1.0);',
-      '  } else {',
-      '    float contrast_mod = 0.25 * u_contrast + 0.5 * u_spin_amount + 1.2;',
-      '    float paint = clamp(length(uv) * 0.035 * contrast_mod, 0.0, 2.0);',
-      '    float c1p = max(0.0, 1.0 - contrast_mod * abs(1.0 - paint));',
-      '    float c2p = max(0.0, 1.0 - contrast_mod * abs(paint));',
-      '    float c3p = 1.0 - min(1.0, c1p + c2p);',
-      '    col = (0.3 / u_contrast) * u_c1 + (1.0 - 0.3 / u_contrast) * (u_c1 * c1p + u_c2 * c2p + u_c3 * c3p);',
-      '    col = col * (1.0 - u_flash * 0.35) + u_flash * 0.35 * vec3(1.0) * exp(-uv_len * 3.0);',
-      '  }',
+      '  float v = f * 0.5 + 0.5;',
+      '  v = clamp((v - 0.5) * u_contrast + 0.5, 0.0, 1.0);',
+      '  vec3 col = mix(u_c3, u_c1, smoothstep(0.04, 0.74, v));',
+      '  col = mix(col, u_c2, smoothstep(0.72, 1.0, v));',
+      '  col += u_c2 * glow;',
+      '  col *= 1.0 - 0.26 * smoothstep(0.95, 2.1, length(p));',
       '  gl_FragColor = vec4(col, 1.0);',
       '}'
     ].join('\n');
 
     /* ---------------- 数据 ---------------- */
     var MODES = [
-      { key: 'vortex',  name: '旋涡 · 主菜单' },
-      { key: 'ripple',  name: '涟漪 · 战斗' },
-      { key: 'wave',    name: '波涌' },
-      { key: 'tide',    name: '潮汐呼吸' },
-      { key: 'rays',    name: '圣光放射' },
-      { key: 'kaleido', name: '万花筒曼陀罗' },
-      { key: 'splash',  name: '烟雾旋涡' }
+      '一 · 旋涡 Vortex',
+      '二 · 涟漪 Ripple',
+      '三 · 烟雾 Smoke',
+      '四 · 波浪 Waves',
+      '五 · 万花筒 Kaleido',
+      '六 · 隧道 Tunnel',
+      '七 · 玫瑰窗 Rose'
     ];
-    function modeIndex(key) {
-      for (var i = 0; i < MODES.length; i++) if (MODES[i].key === key) return i;
-      return 0;
-    }
-    function modeName(key) { return MODES[modeIndex(key)].name; }
 
     var DEFAULTS = {
-      mode: 'ripple', c1: '#7A0635', c2: '#D9A441', c3: '#120409',
-      contrast: 3, spinAmount: 0.6, speed: 0.5, pixelSizeFac: 2000, spinEase: 0.5,
-      mAmp: 1, mRate: 1, rFreq: 22, rRate: 6, rAmp: 0.05, flash: 0, offsetX: 0, offsetY: 0
-    };
-    var MENU_PRESET = {
-      mode: 'vortex', c1: '#1D4ED8', c2: '#FFFFFF', c3: '#081226',
-      contrast: 3, spinAmount: 0.6, speed: 0.5, pixelSizeFac: 2000, spinEase: 0.5,
-      mAmp: 1, mRate: 1, rFreq: 22, rRate: 6, rAmp: 0.05, flash: 0, offsetX: 0, offsetY: 0
+      mode: 0, c1: '#1d4ed8', c2: '#ffffff', c3: '#081226',
+      contrast: 1.7, spin: 0.60, speed: 0.50, scale: 1.0, warp: 0.8, pixelFac: 1200
     };
 
-    /* 自创预设：motion + 三色 + contrast，其余用默认，pixelSizeFac 单独给 */
+    /* 全部预设为自创命名与配色 */
     var PRESETS = [
-      { name: '教堂蓝白', mode: 'vortex',  c1: '#1D4ED8', c2: '#FFFFFF', c3: '#081226', contrast: 3.0, pixelSizeFac: 2000 },
-      { name: '绛红涟漪', mode: 'ripple',  c1: '#7A0635', c2: '#D9A441', c3: '#120409', contrast: 2.8, pixelSizeFac: 1500 },
-      { name: '深紫圣殿', mode: 'splash',  c1: '#5C314A', c2: '#B27170', c3: '#090610', contrast: 2.4, pixelSizeFac: 1200 },
-      { name: '玫瑰窗',   mode: 'kaleido', c1: '#8A1C4A', c2: '#F2C14E', c3: '#160A24', contrast: 2.9, pixelSizeFac: 1600 },
-      { name: '翡翠深渊', mode: 'vortex',  c1: '#0E7A5F', c2: '#A8F0D0', c3: '#04150F', contrast: 3.1, pixelSizeFac: 1300 },
-      { name: '熔岩裂谷', mode: 'wave',    c1: '#B33A12', c2: '#FFB03A', c3: '#170602', contrast: 3.3, pixelSizeFac: 900 },
-      { name: '午夜霓虹', mode: 'rays',    c1: '#2430C8', c2: '#FF3EA5', c3: '#05030F', contrast: 3.4, pixelSizeFac: 1400 },
-      { name: '樱粉烟雾', mode: 'splash',  c1: '#C86A9A', c2: '#FFE3EF', c3: '#1D0A16', contrast: 2.2, pixelSizeFac: 1000 },
-      { name: '黑金王座', mode: 'kaleido', c1: '#8A6A1C', c2: '#FFE98A', c3: '#0A0802', contrast: 3.0, pixelSizeFac: 1500 },
-      { name: '深海静默', mode: 'ripple',  c1: '#0D4A6B', c2: '#7FD4F2', c3: '#02090F', contrast: 2.6, pixelSizeFac: 1100 },
-      { name: '极光之夜', mode: 'wave',    c1: '#1C8A6A', c2: '#B08AFF', c3: '#040714', contrast: 2.7, pixelSizeFac: 1300 },
-      { name: '血月',     mode: 'vortex',  c1: '#8A1020', c2: '#FF7A5C', c3: '#0D0206', contrast: 3.2, pixelSizeFac: 1200 },
-      { name: '纸墨黑白', mode: 'kaleido', c1: '#5A5A66', c2: '#FFFFFF', c3: '#060608', contrast: 3.4, pixelSizeFac: 1800 }
+      { name: '教堂蓝白（定版）', mode: 0, c1: '#1d4ed8', c2: '#ffffff', c3: '#081226', contrast: 3.0, spin: 0.60, speed: 0.50, scale: 1.0,  warp: 0.8, pixelFac: 2000 },
+      { name: '绛红涟漪（战斗）', mode: 1, c1: '#7a0635', c2: '#d9a441', c3: '#120409', contrast: 1.8, spin: 0.30, speed: 0.70, scale: 1.1,  warp: 0.6, pixelFac: 1200 },
+      { name: '深紫圣殿',         mode: 2, c1: '#5c314a', c2: '#b27170', c3: '#090610', contrast: 1.4, spin: 0.40, speed: 0.35, scale: 0.9,  warp: 1.2, pixelFac: 900 },
+      { name: '玫瑰窗',           mode: 6, c1: '#8a1c4a', c2: '#f2c14e', c3: '#160a24', contrast: 2.0, spin: 0.20, speed: 0.30, scale: 1.0,  warp: 0.5, pixelFac: 1600 },
+      { name: '翡翠深渊',         mode: 0, c1: '#0e7a5f', c2: '#a8f0d0', c3: '#04150f', contrast: 1.9, spin: 0.90, speed: 0.60, scale: 1.2,  warp: 0.7, pixelFac: 1100 },
+      { name: '熔岩裂谷',         mode: 3, c1: '#b33a12', c2: '#ffb03a', c3: '#170602', contrast: 2.2, spin: 0.20, speed: 0.80, scale: 1.3,  warp: 1.0, pixelFac: 800 },
+      { name: '午夜霓虹',         mode: 5, c1: '#2430c8', c2: '#ff3ea5', c3: '#05030f', contrast: 2.4, spin: 0.50, speed: 1.10, scale: 1.0,  warp: 0.4, pixelFac: 1400 },
+      { name: '樱粉烟雾',         mode: 2, c1: '#c86a9a', c2: '#ffe3ef', c3: '#1d0a16', contrast: 1.3, spin: 0.35, speed: 0.30, scale: 0.8,  warp: 1.4, pixelFac: 700 },
+      { name: '黑金王座',         mode: 4, c1: '#8a6a1c', c2: '#ffe98a', c3: '#0a0802', contrast: 2.1, spin: 0.25, speed: 0.45, scale: 1.0,  warp: 0.6, pixelFac: 1500 },
+      { name: '深海静默',         mode: 1, c1: '#0d4a6b', c2: '#7fd4f2', c3: '#02090f', contrast: 1.6, spin: 0.15, speed: 0.40, scale: 0.9,  warp: 0.9, pixelFac: 1000 },
+      { name: '极光之夜',         mode: 3, c1: '#1c8a6a', c2: '#b08aff', c3: '#040714', contrast: 1.8, spin: 0.30, speed: 0.55, scale: 1.1,  warp: 1.1, pixelFac: 1300 },
+      { name: '血月',             mode: 0, c1: '#8a1020', c2: '#ff7a5c', c3: '#0d0206', contrast: 2.3, spin: 0.75, speed: 0.50, scale: 1.05, warp: 0.8, pixelFac: 1200 },
+      { name: '纸墨黑白',         mode: 4, c1: '#5a5a66', c2: '#ffffff', c3: '#060608', contrast: 2.6, spin: 0.20, speed: 0.35, scale: 1.0,  warp: 0.5, pixelFac: 1800 },
+      { name: '薄荷战斗 A2（定版）', mode: 1, c1: '#35b09b', c2: '#ffe066', c3: '#0e352f', contrast: 1.5, spin: 0.60, speed: 0.50, scale: 1.0,  warp: 0.6, pixelFac: 800 },
+      { name: '日蚀 Solar Eclipse', mode: 4, c1: '#c2410c', c2: '#facc15', c3: '#000000', contrast: 2.8, spin: 0.10, speed: 0.25, scale: 1.0,  warp: 0.3, pixelFac: 2000 },
+      { name: '冰川 Glacier', mode: 3, c1: '#0369a1', c2: '#e0f2fe', c3: '#082f49', contrast: 1.7, spin: 0.35, speed: 0.45, scale: 1.1,  warp: 1.0, pixelFac: 1200 },
+      { name: '紫罗兰虚空 Violet Void', mode: 6, c1: '#6d28d9', c2: '#c4b5fd', c3: '#0b0618', contrast: 2.0, spin: 0.45, speed: 0.40, scale: 1.0,  warp: 0.9, pixelFac: 1500 },
+      { name: '抹茶庭院 Matcha Garden', mode: 2, c1: '#4d7c0f', c2: '#fef9c3', c3: '#101a05', contrast: 1.4, spin: 0.30, speed: 0.35, scale: 0.9,  warp: 1.2, pixelFac: 900 },
     ];
 
-    var SLIDERS_BASE = [
-      { key: 'contrast',     label: '对比',     min: 0.2, max: 5,    step: 0.05, dec: 2 },
-      { key: 'spinAmount',   label: '旋量',     min: 0,   max: 2,    step: 0.01, dec: 2 },
-      { key: 'speed',        label: '速度',     min: 0,   max: 2,    step: 0.01, dec: 2 },
-      { key: 'pixelSizeFac', label: '像素粒度', min: 100, max: 4000, step: 10,   dec: 0, unit: '越大越细' },
-      { key: 'spinEase',     label: '缓动',     min: 0,   max: 2,    step: 0.01, dec: 2 },
-      { key: 'mAmp',         label: '运动强度', min: 0,   max: 3,    step: 0.01, dec: 2 },
-      { key: 'mRate',        label: '运动速率', min: 0,   max: 3,    step: 0.01, dec: 2 }
+    var SLIDERS = [
+      { key: 'contrast', label: '对比度',     min: 0.2, max: 4.0,  step: 0.05, dec: 2 },
+      { key: 'spin',     label: '旋转量',     min: 0,   max: 2.0,  step: 0.01, dec: 2 },
+      { key: 'speed',    label: '速度',       min: 0,   max: 2.5,  step: 0.01, dec: 2 },
+      { key: 'scale',    label: '图案缩放',   min: 0.4, max: 3.0,  step: 0.01, dec: 2 },
+      { key: 'warp',     label: '扭曲量',     min: 0,   max: 2.0,  step: 0.01, dec: 2 },
+      { key: 'pixelFac', label: '像素细腻度', min: 100, max: 2000, step: 10,   dec: 0, unit: '越大越细' }
     ];
-    var SLIDERS_RIPPLE = [
-      { key: 'rFreq', label: '波纹频率', min: 2, max: 60,  step: 0.5,  dec: 1 },
-      { key: 'rRate', label: '波纹速度', min: 0, max: 20,  step: 0.1,  dec: 1 },
-      { key: 'rAmp',  label: '波纹幅度', min: 0, max: 0.2, step: 0.005, dec: 3 }
-    ];
-    var SLIDERS_OTHER = [
-      { key: 'flash',   label: '中心闪光', min: 0,    max: 1,   step: 0.01, dec: 2 },
-      { key: 'offsetX', label: '偏移 X',   min: -0.4, max: 0.4, step: 0.01, dec: 2 },
-      { key: 'offsetY', label: '偏移 Y',   min: -0.4, max: 0.4, step: 0.01, dec: 2 }
-    ];
-    var ALL_SLIDERS = SLIDERS_BASE.concat(SLIDERS_RIPPLE, SLIDERS_OTHER);
 
-    var STORE_KEY = 'vortex-bg-editor-v2';
-    var CE_KEY = 'vortex-bg-editor-ce-v2';
+    var STORE_KEY = 'vortex-bg-editor-v1';
 
     function clampNum(v, min, max, fallback) {
       v = parseFloat(v);
       if (!isFinite(v)) return fallback;
       return Math.min(max, Math.max(min, v));
     }
-    function validHex(s) { return (typeof s === 'string') && /^#[0-9a-fA-F]{6}$/.test(s); }
-
+    function validHex(s) {
+      return (typeof s === 'string') && /^#[0-9a-fA-F]{6}$/.test(s);
+    }
     function sanitize(raw) {
-      var out = {}, d = DEFAULTS;
-      if (!raw || typeof raw !== 'object') return Object.assign({}, d);
-      var mk = (typeof raw.mode === 'string') ? raw.mode : null;
-      out.mode = null;
-      for (var i = 0; i < MODES.length; i++) if (MODES[i].key === mk) out.mode = mk;
-      if (!out.mode) return Object.assign({}, d); /* 旧格式存档：忽略，用默认 */
-      out.c1 = validHex(raw.c1) ? raw.c1.toUpperCase() : d.c1;
-      out.c2 = validHex(raw.c2) ? raw.c2.toUpperCase() : d.c2;
-      out.c3 = validHex(raw.c3) ? raw.c3.toUpperCase() : d.c3;
-      for (var j = 0; j < ALL_SLIDERS.length; j++) {
-        var s = ALL_SLIDERS[j];
-        var srcKey = s.key;
-        var v = raw[srcKey];
-        if (srcKey === 'rFreq' || srcKey === 'rRate' || srcKey === 'rAmp') {
-          var rk = srcKey === 'rFreq' ? 'freq' : (srcKey === 'rRate' ? 'rate' : 'amp');
-          v = (raw.ripple && typeof raw.ripple === 'object') ? raw.ripple[rk] : raw[srcKey];
-        }
-        out[s.key] = clampNum(v, s.min, s.max, d[s.key]);
-      }
-      if (Array.isArray(raw.offset)) {
-        out.offsetX = clampNum(raw.offset[0], -0.4, 0.4, 0);
-        out.offsetY = clampNum(raw.offset[1], -0.4, 0.4, 0);
+      var out = {};
+      var d = DEFAULTS;
+      out.mode = Math.floor(clampNum(raw && raw.mode, 0, 6, d.mode));
+      out.c1 = validHex(raw && raw.c1) ? raw.c1.toLowerCase() : d.c1;
+      out.c2 = validHex(raw && raw.c2) ? raw.c2.toLowerCase() : d.c2;
+      out.c3 = validHex(raw && raw.c3) ? raw.c3.toLowerCase() : d.c3;
+      for (var i = 0; i < SLIDERS.length; i++) {
+        var s = SLIDERS[i];
+        out[s.key] = clampNum(raw && raw[s.key], s.min, s.max, d[s.key]);
       }
       return out;
     }
-    function stateToJSON(st) {
-      return {
-        mode: st.mode, c1: st.c1, c2: st.c2, c3: st.c3,
-        contrast: st.contrast, spinAmount: st.spinAmount, speed: st.speed,
-        pixelSizeFac: st.pixelSizeFac, spinEase: st.spinEase, mAmp: st.mAmp, mRate: st.mRate,
-        ripple: { freq: st.rFreq, rate: st.rRate, amp: st.rAmp },
-        flash: st.flash, offset: [st.offsetX, st.offsetY]
-      };
-    }
     function hexToRgb(hex) {
-      return [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+      return [
+        parseInt(hex.slice(1, 3), 16) / 255,
+        parseInt(hex.slice(3, 5), 16) / 255,
+        parseInt(hex.slice(5, 7), 16) / 255
+      ];
     }
-    function rgbToHex(rgb) {
-      function h(v) { var s = Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16); return s.length < 2 ? '0' + s : s; }
-      return ('#' + h(rgb[0]) + h(rgb[1]) + h(rgb[2])).toUpperCase();
-    }
-
-    /* ---------- lerpColour：HSL 最短色相路径 + smoothstep 缓动 ---------- */
-    function rgbToHsl(r, g, b) {
-      var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, h = 0, s = 0;
-      if (mx !== mn) {
-        var dd = mx - mn;
-        s = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
-        if (mx === r) h = (g - b) / dd + (g < b ? 6 : 0);
-        else if (mx === g) h = (b - r) / dd + 2;
-        else h = (r - g) / dd + 4;
-        h *= 60;
-      }
-      return [h, s, l];
-    }
-    function hslToRgb(h, s, l) {
-      h = ((h % 360) + 360) % 360 / 360;
-      if (s === 0) return [l, l, l];
-      var q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-      function f(t) {
-        if (t < 0) t += 1; if (t > 1) t -= 1;
-        if (t < 1 / 6) return p + (q - p) * 6 * t;
-        if (t < 1 / 2) return q;
-        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-        return p;
-      }
-      return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
-    }
-    function smooth01(t) { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); }
-    function lerpColourRGB(a, b, t) {
-      var ha = rgbToHsl(a[0], a[1], a[2]), hb = rgbToHsl(b[0], b[1], b[2]);
-      var dh = hb[0] - ha[0];
-      if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
-      var e = smooth01(t);
-      return hslToRgb(ha[0] + dh * e, ha[1] + (hb[1] - ha[1]) * e, ha[2] + (hb[2] - ha[2]) * e);
+    function pixelBlocks(pixelFac) {
+      var k = (pixelFac - 100) / (2000 - 100);
+      return Math.round(24 + k * (500 - 24));
     }
 
-    /* ---------------- 状态 ---------------- */
     var state = (function () {
       try {
         var saved = window.localStorage.getItem(STORE_KEY);
-        if (saved) {
-          var p = JSON.parse(saved);
-          if (p && typeof p.mode === 'string' && typeof p.spinAmount === 'number') return sanitize(p);
-        }
-      } catch (e) {}
-      return Object.assign({}, DEFAULTS);
+        if (saved) return sanitize(JSON.parse(saved));
+      } catch (e) { /* 存储不可用时用默认值 */ }
+      return sanitize(DEFAULTS);
     })();
+
     var paused = false;
-    var simTime = 0;      /* 动画时钟（暂停冻结） */
-    var wallTime = 0;     /* 颜色引擎时钟（持续走） */
+    var simTime = 0;
 
     function saveState() {
-      try { window.localStorage.setItem(STORE_KEY, JSON.stringify(stateToJSON(state))); } catch (e) {}
+      try { window.localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
     }
 
-    /* ---------------- 颜色引擎 ---------------- */
-    function dedupColors(ch) {
-      var seen = {}, out = [];
-      PRESETS.forEach(function (p) { var k = p[ch].toUpperCase(); if (!seen[k]) { seen[k] = 1; out.push(k); } });
-      return out;
-    }
-    var CE = {
-      driver: { c1: 'manual', c2: 'manual' },
-      track: {
-        c1: { on: false, dur: 14, frames: [{ p: 0, c: '#DE443B' }, { p: 35, c: '#F97316' }, { p: 70, c: '#A855F7' }] },
-        c2: { on: false, dur: 22, frames: [{ p: 0, c: '#006BB4' }, { p: 40, c: '#14B8A6' }, { p: 75, c: '#6366F1' }] }
-      },
-      pool: {
-        c1: { on: false, dwell: 3, fade: 2, colors: dedupColors('c1'), cur: null, prev: null, from: null, to: null, phase: 'dwell', timer: 0 },
-        c2: { on: false, dwell: 3, fade: 2, colors: dedupColors('c2'), cur: null, prev: null, from: null, to: null, phase: 'dwell', timer: 0 }
-      },
-      car: { on: false, dwell: 6, fade: 3, idx: 0, phase: 'dwell', timer: 0, from: null, to: null },
-      trans: null
-    };
-    try {
-      var ceSaved = JSON.parse(window.localStorage.getItem(CE_KEY) || 'null');
-      if (ceSaved && typeof ceSaved === 'object') {
-        ['c1', 'c2'].forEach(function (ch) {
-          if (ceSaved.track && ceSaved.track[ch]) {
-            CE.track[ch].dur = clampNum(ceSaved.track[ch].dur, 4, 60, CE.track[ch].dur);
-            if (Array.isArray(ceSaved.track[ch].frames)) ceSaved.track[ch].frames.forEach(function (f, i) {
-              if (CE.track[ch].frames[i] && validHex(f.c)) CE.track[ch].frames[i].c = f.c.toUpperCase();
-            });
-          }
-          if (ceSaved.pool && ceSaved.pool[ch]) {
-            CE.pool[ch].dwell = clampNum(ceSaved.pool[ch].dwell, 0.5, 10, 3);
-            CE.pool[ch].fade = clampNum(ceSaved.pool[ch].fade, 0.5, 8, 2);
-          }
-        });
-        if (ceSaved.car) { CE.car.dwell = clampNum(ceSaved.car.dwell, 3, 20, 6); CE.car.fade = clampNum(ceSaved.car.fade, 1, 8, 3); }
-      }
-    } catch (e) {}
-    function saveCE() {
-      try {
-        window.localStorage.setItem(CE_KEY, JSON.stringify({
-          track: { c1: { dur: CE.track.c1.dur, frames: CE.track.c1.frames }, c2: { dur: CE.track.c2.dur, frames: CE.track.c2.frames } },
-          pool: { c1: { dwell: CE.pool.c1.dwell, fade: CE.pool.c1.fade }, c2: { dwell: CE.pool.c2.dwell, fade: CE.pool.c2.fade } },
-          car: { dwell: CE.car.dwell, fade: CE.car.fade }
-        }));
-      } catch (e) {}
-    }
-
-    function trackSample(tr, elapsed) {
-      var dur = Math.max(1, tr.dur);
-      var pos = ((elapsed % dur) + dur) % dur / dur * 100;
-      var fr = tr.frames, n = fr.length;
-      for (var i = 0; i < n; i++) {
-        var a = fr[i], b = fr[(i + 1) % n];
-        var segLen = (b.p - a.p + 100) % 100; if (segLen === 0) segLen = 100;
-        var rel = (pos - a.p + 100) % 100;
-        if (rel <= segLen) return lerpColourRGB(hexToRgb(a.c), hexToRgb(b.c), segLen ? rel / segLen : 0);
-      }
-      return hexToRgb(fr[0].c);
-    }
-    function poolUpdate(P, dt, currentRGB) {
-      if (!P.cur) { P.cur = rgbToHex(currentRGB); P.from = P.cur; P.to = P.cur; P.phase = 'dwell'; P.timer = 0; }
-      P.timer += dt;
-      if (P.phase === 'dwell') {
-        if (P.timer >= P.dwell) {
-          var choices = P.colors.filter(function (c) { return c !== P.cur && c !== P.prev; });
-          if (!choices.length) choices = P.colors.filter(function (c) { return c !== P.cur; });
-          if (choices.length) {
-            P.prev = P.cur; P.from = P.cur;
-            P.to = choices[Math.floor(Math.random() * choices.length)];
-            P.phase = 'fade'; P.timer = 0;
-          } else P.timer = 0;
-        }
-        return hexToRgb(P.cur);
-      }
-      var t = P.fade > 0 ? P.timer / P.fade : 1;
-      if (t >= 1) { P.cur = P.to; P.phase = 'dwell'; P.timer = 0; return hexToRgb(P.cur); }
-      return lerpColourRGB(hexToRgb(P.from), hexToRgb(P.to), t);
-    }
-    function carUpdate(dt) {
-      var C = CE.car, n = PRESETS.length;
-      if (!C.from) { C.from = [state.c1, state.c2]; C.to = [PRESETS[C.idx].c1, PRESETS[C.idx].c2]; C.phase = 'fade'; C.timer = 0; }
-      C.timer += dt;
-      if (C.phase === 'dwell') {
-        if (C.timer >= C.dwell) {
-          C.idx = (C.idx + 1) % n;
-          C.from = C.to; C.to = [PRESETS[C.idx].c1, PRESETS[C.idx].c2];
-          C.phase = 'fade'; C.timer = 0;
-        }
-        return [hexToRgb(C.to[0]), hexToRgb(C.to[1])];
-      }
-      var t = C.fade > 0 ? C.timer / C.fade : 1;
-      if (t >= 1) { C.phase = 'dwell'; C.timer = 0; return [hexToRgb(C.to[0]), hexToRgb(C.to[1])]; }
-      return [lerpColourRGB(hexToRgb(C.from[0]), hexToRgb(C.to[0]), t), lerpColourRGB(hexToRgb(C.from[1]), hexToRgb(C.to[1]), t)];
-    }
-
-    var eff = { c1: hexToRgb(state.c1), c2: hexToRgb(state.c2), c3: hexToRgb(state.c3) };
-    function computeEff(dt) {
-      var base = { c1: hexToRgb(state.c1), c2: hexToRgb(state.c2), c3: hexToRgb(state.c3) };
-      if (CE.trans) {
-        CE.trans.t += dt;
-        var p = CE.trans.t / CE.trans.dur;
-        if (p >= 1) { eff = { c1: CE.trans.to.c1, c2: CE.trans.to.c2, c3: CE.trans.to.c3 }; CE.trans = null; return; }
-        eff = {
-          c1: lerpColourRGB(CE.trans.from.c1, CE.trans.to.c1, p),
-          c2: lerpColourRGB(CE.trans.from.c2, CE.trans.to.c2, p),
-          c3: lerpColourRGB(CE.trans.from.c3, CE.trans.to.c3, p)
-        };
-        return;
-      }
-      eff = base;
-      if (CE.car.on) { var pair = carUpdate(dt); eff.c1 = pair[0]; eff.c2 = pair[1]; return; }
-      ['c1', 'c2'].forEach(function (ch) {
-        if (CE.driver[ch] === 'track' && CE.track[ch].on) eff[ch] = trackSample(CE.track[ch], wallTime);
-        else if (CE.driver[ch] === 'pool' && CE.pool[ch].on) eff[ch] = poolUpdate(CE.pool[ch], dt, base[ch]);
-      });
-    }
-    function startColorTransition(toState) {
-      CE.trans = {
-        t: 0, dur: 0.8,
-        from: { c1: eff.c1.slice(), c2: eff.c2.slice(), c3: eff.c3.slice() },
-        to: { c1: hexToRgb(toState.c1), c2: hexToRgb(toState.c2), c3: hexToRgb(toState.c3) }
-      };
-    }
-    function allDriversManual() {
-      CE.driver.c1 = 'manual'; CE.driver.c2 = 'manual';
-      CE.track.c1.on = CE.track.c2.on = false;
-      CE.pool.c1.on = CE.pool.c2.on = false;
-      CE.car.on = false; CE.car.from = null;
-      syncCEUI(); updateDriverLabels();
-    }
-    function driverLabel(d) {
-      return d === 'track' ? '颜色轨迹' : d === 'pool' ? '颜色池' : d === 'carousel' ? '双色轮播' : '手动';
-    }
-    function updateDriverLabels() {
-      $('driver1').innerHTML = '当前司机：<b>' + driverLabel(CE.car.on ? 'carousel' : CE.driver.c1) + '</b>';
-      $('driver2').innerHTML = '当前司机：<b>' + driverLabel(CE.car.on ? 'carousel' : CE.driver.c2) + '</b>';
-      $('carName').textContent = CE.car.on ? ('当前套：' + PRESETS[CE.car.idx].name + (CE.car.phase === 'fade' ? '（渐变中）' : '')) : '未开启';
-    }
-
-    /* ---------------- DOM 工具 ---------------- */
+    /* ---------------- DOM ---------------- */
     function $(id) { return document.getElementById(id); }
     var glCanvas = $('glCanvas'), swCanvas = $('swCanvas');
     var statusEl = $('status'), statusText = $('statusText'), fpsText = $('fpsText');
     var toastEl = $('toast'), toastTimer = null;
+
     function toast(msg, isErr) {
       toastEl.textContent = msg;
       toastEl.className = 'show' + (isErr ? ' err' : '');
@@ -694,18 +519,20 @@
       statusEl.id = 'status';
     }
 
-    /* ---------------- WebGL ---------------- */
+    /* ---------------- WebGL 路径 ---------------- */
     var gl = null, glProg = null, glU = {}, glOK = false, glError = '';
+
     function compileShader(type, src) {
       var sh = gl.createShader(type);
-      gl.shaderSource(sh, src); gl.compileShader(sh);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
       if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
         var log = gl.getShaderInfoLog(sh) || '未知编译错误';
-        gl.deleteShader(sh); throw new Error(log.split('\n')[0]);
+        gl.deleteShader(sh);
+        throw new Error(log.split('\n')[0]);
       }
       return sh;
     }
-    var UNIFORMS = ['u_res', 'u_time', 'u_spin_time', 'u_mode', 'u_c1', 'u_c2', 'u_c3', 'u_contrast', 'u_spin_amount', 'u_spin_ease', 'u_pixelFac', 'u_m_amp', 'u_m_rate', 'u_r_freq', 'u_r_rate', 'u_r_amp', 'u_flash', 'u_offset'];
     function initGL() {
       glOK = false; glError = '';
       try {
@@ -717,9 +544,12 @@
         var vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
         var fs = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
         glProg = gl.createProgram();
-        gl.attachShader(glProg, vs); gl.attachShader(glProg, fs);
+        gl.attachShader(glProg, vs);
+        gl.attachShader(glProg, fs);
         gl.linkProgram(glProg);
-        if (!gl.getProgramParameter(glProg, gl.LINK_STATUS)) throw new Error((gl.getProgramInfoLog(glProg) || '链接失败').split('\n')[0]);
+        if (!gl.getProgramParameter(glProg, gl.LINK_STATUS)) {
+          throw new Error((gl.getProgramInfoLog(glProg) || '链接失败').split('\n')[0]);
+        }
         gl.useProgram(glProg);
         var buf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -727,139 +557,139 @@
         var loc = gl.getAttribLocation(glProg, 'a_pos');
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        var names = ['u_res', 'u_time', 'u_mode', 'u_c1', 'u_c2', 'u_c3', 'u_contrast', 'u_spin', 'u_scale', 'u_warp', 'u_blocks'];
         glU = {};
-        for (var i = 0; i < UNIFORMS.length; i++) glU[UNIFORMS[i]] = gl.getUniformLocation(glProg, UNIFORMS[i]);
-      } catch (e) { glError = '着色器编译/链接失败：' + e.message; gl = null; return false; }
-      glOK = true; return true;
+        for (var i = 0; i < names.length; i++) glU[names[i]] = gl.getUniformLocation(glProg, names[i]);
+      } catch (e) {
+        glError = '着色器编译/链接失败：' + e.message;
+        gl = null;
+        return false;
+      }
+      glOK = true;
+      return true;
     }
     function drawGL(w, h) {
       gl.viewport(0, 0, w, h);
-      var et = simTime * state.speed;
+      var c1 = hexToRgb(state.c1), c2 = hexToRgb(state.c2), c3 = hexToRgb(state.c3);
       gl.uniform2f(glU.u_res, w, h);
-      gl.uniform1f(glU.u_time, et);
-      gl.uniform1f(glU.u_spin_time, et);
-      gl.uniform1i(glU.u_mode, modeIndex(state.mode));
-      gl.uniform3f(glU.u_c1, eff.c1[0], eff.c1[1], eff.c1[2]);
-      gl.uniform3f(glU.u_c2, eff.c2[0], eff.c2[1], eff.c2[2]);
-      gl.uniform3f(glU.u_c3, eff.c3[0], eff.c3[1], eff.c3[2]);
+      gl.uniform1f(glU.u_time, simTime);
+      gl.uniform1i(glU.u_mode, state.mode);
+      gl.uniform3f(glU.u_c1, c1[0], c1[1], c1[2]);
+      gl.uniform3f(glU.u_c2, c2[0], c2[1], c2[2]);
+      gl.uniform3f(glU.u_c3, c3[0], c3[1], c3[2]);
       gl.uniform1f(glU.u_contrast, state.contrast);
-      gl.uniform1f(glU.u_spin_amount, state.spinAmount);
-      gl.uniform1f(glU.u_spin_ease, state.spinEase);
-      gl.uniform1f(glU.u_pixelFac, state.pixelSizeFac);
-      gl.uniform1f(glU.u_m_amp, state.mAmp);
-      gl.uniform1f(glU.u_m_rate, state.mRate);
-      gl.uniform1f(glU.u_r_freq, state.rFreq);
-      gl.uniform1f(glU.u_r_rate, state.rRate);
-      gl.uniform1f(glU.u_r_amp, state.rAmp);
-      gl.uniform1f(glU.u_flash, state.flash);
-      gl.uniform2f(glU.u_offset, state.offsetX, state.offsetY);
+      gl.uniform1f(glU.u_spin, state.spin);
+      gl.uniform1f(glU.u_scale, state.scale);
+      gl.uniform1f(glU.u_warp, state.warp);
+      gl.uniform1f(glU.u_blocks, pixelBlocks(state.pixelFac));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
-    glCanvas.addEventListener('webglcontextlost', function (e) { e.preventDefault(); glOK = false; startFallback('WebGL 上下文丢失'); }, false);
+
+    glCanvas.addEventListener('webglcontextlost', function (e) {
+      e.preventDefault();
+      glOK = false;
+      startFallback('WebGL 上下文丢失');
+    }, false);
     glCanvas.addEventListener('webglcontextrestored', function () {
-      if (initGL()) { useGLPath(); toast('WebGL 上下文已恢复'); } else startFallback(glError || 'WebGL 恢复失败');
+      if (initGL()) {
+        useGLPath();
+        toast('WebGL 上下文已恢复');
+      } else {
+        startFallback(glError || 'WebGL 恢复失败');
+      }
     }, false);
 
-    /* ---------------- Canvas 2D 降级：同一套引擎的 JS 版 ---------------- */
+    /* ---------------- Canvas 2D 备用路径 ----------------
+       与着色器同一套 field 数学的 JS 近似实现，低分辨率
+       ImageData 逐格计算后放大，动画与控件照常工作。 */
     var swCtx = swCanvas.getContext('2d');
     var swOff = document.createElement('canvas');
     var swOffCtx = swOff.getContext('2d');
     var fallbackActive = false, fallbackReason = '';
-    function fluidJS(uvx, uvy, gw, gh) {
-      var et = simTime * state.speed;
-      var spin_time = et, tt = et;
-      var resLen = Math.sqrt(gw * gw + gh * gh);
-      var midX = (gw / resLen) / 2, midY = (gh / resLen) / 2;
-      uvx += state.offsetX; uvy += state.offsetY;
-      var uv_len = Math.sqrt(uvx * uvx + uvy * uvy);
-      var orig_len = uv_len;
-      var speed = spin_time * state.spinEase * 0.2 + 302.2;
-      var dirx = uvx / Math.max(uv_len, 0.0001), diry = uvy / Math.max(uv_len, 0.0001);
-      var mode = state.mode;
-      if (mode === 'vortex') {
-        var ang = Math.atan2(uvy, uvx) + speed - state.spinEase * 20.0 * (state.spinAmount * uv_len + (1 - state.spinAmount));
-        uvx = uv_len * Math.cos(ang) + midX - midX; uvy = uv_len * Math.sin(ang) + midY - midY;
-        uvx = uv_len * Math.cos(ang); uvy = uv_len * Math.sin(ang);
-      } else if (mode === 'ripple') {
-        var pulse = Math.sin(uv_len * state.rFreq - speed * state.rRate) * state.rAmp * state.spinAmount * state.mAmp;
-        uvx += dirx * pulse; uvy += diry * pulse;
-      } else if (mode === 'wave') {
-        var sway = Math.sin(uvy * 9.0 + speed * 3.0) * 0.045 * (0.4 + state.spinAmount);
-        var nx = uvx + (sway + spin_time * 0.03) * state.mAmp;
-        var ny = uvy + Math.cos(uvx * 7.0 + speed * 2.2) * 0.03 * state.mAmp;
-        uvx = nx; uvy = ny;
-      } else if (mode === 'tide') {
-        var tm = (speed - 302.2) * state.mRate;
-        var zoom = 1.0 + Math.sin(tm * 0.9) * 0.20 * (0.4 + state.spinAmount) * state.mAmp;
-        uvx *= zoom; uvy *= zoom;
-      } else if (mode === 'rays') {
-        var tm2 = (speed - 302.2) * state.mRate;
-        var rays = Math.sin(Math.atan2(uvy, uvx) * 9.0 - tm2 * 1.6) * 0.075 * state.spinAmount * state.mAmp;
-        uvx += dirx * rays * (0.3 + uv_len); uvy += diry * rays * (0.3 + uv_len);
-      } else if (mode === 'kaleido') {
-        var kseg = 0.7853981;
-        var rawA = Math.atan2(uvy, uvx) + spin_time * 0.15 * state.mRate;
-        var modA = rawA - kseg * Math.floor(rawA / kseg);
-        var ka = Math.abs(modA - kseg * 0.5);
-        uvx = uv_len * Math.cos(ka); uvy = uv_len * Math.sin(ka);
-        var q = state.pixelSizeFac * 0.28;
-        uvx = Math.floor(uvx * q) / q; uvy = Math.floor(uvy * q) / q;
-      } else { /* splash */
-        var spt = tt * state.mRate;
-        var m6 = Math.min(6.0, spt);
-        var ang2 = Math.atan2(uvy, uvx) + (2.2 + 0.4 * m6) * uv_len - 1.0 - spt * 0.05 - m6 * spt * 0.02;
-        uvx = uv_len * Math.cos(ang2); uvy = uv_len * Math.sin(ang2);
+
+    function smoothstep(a, b, x) {
+      var t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    }
+    function segFoldJS(a, seg) {
+      var w = Math.PI * 2 / seg;
+      var m = ((a % w) + w) % w;
+      return Math.abs(m - w * 0.5);
+    }
+    function fieldJS(px, py, t) {
+      var warp = state.warp;
+      var qx = px + warp * 0.16 * Math.sin(py * 2.7 + t * 0.70) + warp * 0.07 * Math.sin(py * 6.1 - t * 1.05);
+      var qy = py + warp * 0.16 * Math.cos(px * 2.7 - t * 0.62) + warp * 0.07 * Math.cos(px * 6.1 + t * 0.90);
+      var r = Math.sqrt(qx * qx + qy * qy);
+      var a = Math.atan2(qy, qx);
+      var spin = state.spin, f = 0, glow = 0;
+      switch (state.mode) {
+        case 0:
+          f = (Math.sin(3 * a + spin * 7.0 / (r + 0.50) + 2.2 * r - 1.35 * t)
+             + 0.30 * Math.sin(7.0 * r - 2.0 * t)) * 0.78; break;
+        case 1:
+          f = (Math.sin(10.0 * r - 2.1 * t + spin * 3.0 * Math.sin(3.0 * a + t * 0.4))
+             + 0.25 * Math.sin(17.0 * r - 3.1 * t)) * 0.82; break;
+        case 2: {
+          var s = Math.sin(qx * 1.9 + t * 0.40) + Math.sin(qy * 2.4 - t * 0.31)
+                + Math.sin((qx + qy) * 1.25 + t * 0.52) + Math.sin(r * 3.2 - t * 0.60);
+          f = s * 0.25;
+          var breathe = 0.5 + 0.5 * Math.sin(t * 0.9);
+          glow = Math.exp(-Math.sqrt(px * px + py * py) * 2.3) * (0.08 + 0.15 * breathe);
+          break;
+        }
+        case 3:
+          f = Math.sin(qx * 3.1 + 1.7 * Math.sin(qy * 2.3 + t * 0.8) + t * 1.0) * 0.72
+            + Math.sin(qy * 5.2 - t * 1.35) * 0.28; break;
+        case 4: {
+          var aa = segFoldJS(a + spin * 1.4 / (r + 0.6), 6);
+          var kx = r * Math.cos(aa), ky = r * Math.sin(aa);
+          f = Math.sin(kx * 6.0 - t * 1.1) * 0.60 + Math.sin(ky * 8.0 + r * 4.0 - t * 1.5) * 0.40;
+          break;
+        }
+        case 5: {
+          var lr = Math.log(r + 0.09);
+          f = Math.sin(lr * 8.5 - 2.3 * t) * 0.72 + Math.sin(a * 5.0 + spin * 3.0 + lr * 3.0) * 0.28;
+          break;
+        }
+        default: {
+          var aa7 = segFoldJS(a, 8);
+          var rr = r * (0.86 + 0.26 * Math.cos(aa7 * 8.0));
+          f = Math.sin(rr * 10.0 - 1.25 * t + spin * 2.0 * Math.cos(aa7 * 8.0)) * 0.62
+            + Math.sin(aa7 * 24.0 + r * 3.0) * 0.20
+            + Math.sin(r * 22.0 - 1.8 * t) * 0.18;
+        }
       }
-      uvx *= 30.0; uvy *= 30.0;
-      var t = (mode === 'splash') ? (tt * 6.0 * state.mRate + 1033.0) : tt;
-      var uv2x = uvx + uvy, uv2y = uvx + uvy;
-      for (var i = 0; i < 5; i++) {
-        var s = Math.sin(Math.max(uvx, uvy));
-        uv2x += s + uvx; uv2y += s + uvy;
-        uvx += 0.5 * Math.cos(5.1123314 + 0.353 * uv2y + t * 0.131121);
-        uvy += 0.5 * Math.sin(uv2x - t * 0.11361);
-        var fold = Math.cos(uvx + uvy) - Math.sin(uvx * 0.711 - uvy);
-        uvx -= fold; uvy -= fold;
-      }
-      var lenUv = Math.sqrt(uvx * uvx + uvy * uvy);
-      if (mode === 'splash') {
-        var smoke_res = Math.min(2.0, Math.max(-2.0, 1.5 + lenUv * 0.12 - 0.17 * Math.min(10.0, (tt + 12.0) * 1.2 - 4.0)));
-        if (smoke_res < 0.2) smoke_res = (smoke_res - 0.2) * 0.6 + 0.2;
-        var sc1p = Math.max(0, 1 - 2 * Math.abs(1 - smoke_res));
-        var sc2p = Math.max(0, 1 - 2 * Math.abs(smoke_res));
-        var cb = 1 - Math.min(1, sc1p + sc2p);
-        var rr = eff.c1[0] * sc1p + eff.c2[0] * sc2p + 0.186 * cb;
-        var gg = eff.c1[1] * sc1p + eff.c2[1] * sc2p + 0.233 * cb;
-        var bb = eff.c1[2] * sc1p + eff.c2[2] * sc2p + 0.242 * cb;
-        var mf = Math.max(sc1p, sc2p);
-        var modf = Math.max(state.flash * 0.8, mf * 5 - 4.4) + state.flash * mf;
-        return [rr * (1 - modf) + modf, gg * (1 - modf) + modf, bb * (1 - modf) + modf];
-      }
-      var contrast_mod = 0.25 * state.contrast + 0.5 * state.spinAmount + 1.2;
-      var paint = Math.min(2, Math.max(0, lenUv * 0.035 * contrast_mod));
-      var c1p = Math.max(0, 1 - contrast_mod * Math.abs(1 - paint));
-      var c2p = Math.max(0, 1 - contrast_mod * Math.abs(paint));
-      var c3p = 1 - Math.min(1, c1p + c2p);
-      var base = 0.3 / state.contrast, rest = 1 - base;
-      var r = base * eff.c1[0] + rest * (eff.c1[0] * c1p + eff.c2[0] * c2p + eff.c3[0] * c3p);
-      var g = base * eff.c1[1] + rest * (eff.c1[1] * c1p + eff.c2[1] * c2p + eff.c3[1] * c3p);
-      var b = base * eff.c1[2] + rest * (eff.c1[2] * c1p + eff.c2[2] * c2p + eff.c3[2] * c3p);
-      var fl = state.flash * 0.35 * Math.exp(-orig_len * 3.0);
-      r = r * (1 - state.flash * 0.35) + fl; g = g * (1 - state.flash * 0.35) + fl; b = b * (1 - state.flash * 0.35) + fl;
-      return [r, g, b];
+      return [f, glow];
     }
     function drawFallback(w, h) {
-      var gw = 240, gh = Math.max(16, Math.round(gw * h / w));
+      var blocks = Math.min(pixelBlocks(state.pixelFac), 176);
+      var gw = Math.max(24, blocks);
+      var gh = Math.max(16, Math.round(gw * h / w));
       if (swOff.width !== gw || swOff.height !== gh) { swOff.width = gw; swOff.height = gh; }
-      var img = swOffCtx.createImageData(gw, gh), data = img.data;
-      var resLen = Math.sqrt(gw * gw + gh * gh), idx = 0;
+      var img = swOffCtx.createImageData(gw, gh);
+      var data = img.data;
+      var c1 = hexToRgb(state.c1), c2 = hexToRgb(state.c2), c3 = hexToRgb(state.c3);
+      var aspect = w / h, scale = state.scale, contrast = state.contrast;
+      var idx = 0;
       for (var y = 0; y < gh; y++) {
-        var fragY = gh - 1 - y;
+        var py = ((y + 0.5) / gh - 0.5) * 2.0 * scale;
         for (var x = 0; x < gw; x++) {
-          var col = fluidJS((x + 0.5 - 0.5 * gw) / resLen, (fragY + 0.5 - 0.5 * gh) / resLen, gw, gh);
-          data[idx++] = Math.min(255, Math.max(0, col[0] * 255));
-          data[idx++] = Math.min(255, Math.max(0, col[1] * 255));
-          data[idx++] = Math.min(255, Math.max(0, col[2] * 255));
+          var px = ((x + 0.5) / gw - 0.5) * 2.0 * aspect * scale;
+          var fg = fieldJS(px, py, simTime);
+          var v = fg[0] * 0.5 + 0.5;
+          v = Math.min(1, Math.max(0, (v - 0.5) * contrast + 0.5));
+          var m1 = smoothstep(0.04, 0.74, v);
+          var rr = c3[0] + (c1[0] - c3[0]) * m1;
+          var gg = c3[1] + (c1[1] - c3[1]) * m1;
+          var bb = c3[2] + (c1[2] - c3[2]) * m1;
+          var m2 = smoothstep(0.72, 1.0, v);
+          rr += (c2[0] - rr) * m2; gg += (c2[1] - gg) * m2; bb += (c2[2] - bb) * m2;
+          rr += c2[0] * fg[1]; gg += c2[1] * fg[1]; bb += c2[2] * fg[1];
+          var vig = 1.0 - 0.26 * smoothstep(0.95, 2.1, Math.sqrt(px * px + py * py) / scale);
+          data[idx++] = Math.min(255, rr * vig * 255);
+          data[idx++] = Math.min(255, gg * vig * 255);
+          data[idx++] = Math.min(255, bb * vig * 255);
           data[idx++] = 255;
         }
       }
@@ -868,114 +698,117 @@
       swCtx.clearRect(0, 0, w, h);
       swCtx.drawImage(swOff, 0, 0, w, h);
     }
+
     function useGLPath() {
       fallbackActive = false;
       glCanvas.classList.remove('hidden-canvas');
       swCanvas.classList.add('hidden-canvas');
-      setStatus('<b>WebGL 渲染中</b> · ' + modeName(state.mode), false);
+      setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
     }
     function startFallback(reason) {
-      fallbackActive = true; fallbackReason = reason;
+      fallbackActive = true;
+      fallbackReason = reason;
       glCanvas.classList.add('hidden-canvas');
       swCanvas.classList.remove('hidden-canvas');
       setStatus('<b>Canvas 2D 备用渲染</b> · ' + reason, true);
     }
 
     /* ---------------- 控件 ---------------- */
-    var presetSel = $('presetSel');
-    PRESETS.forEach(function (p, i) {
-      var opt = document.createElement('option');
-      opt.value = i; opt.textContent = p.name;
+    var modeSel = $('modeSel'), presetSel = $('presetSel');
+    var i, opt;
+    for (i = 0; i < MODES.length; i++) {
+      opt = document.createElement('option');
+      opt.value = i; opt.textContent = MODES[i];
+      modeSel.appendChild(opt);
+    }
+    for (i = 0; i < PRESETS.length; i++) {
+      opt = document.createElement('option');
+      opt.value = i; opt.textContent = PRESETS[i].name;
       presetSel.appendChild(opt);
-    });
-
-    /* 模式按钮 */
-    var modeBtns = {};
-    (function buildModes() {
-      var grid = $('modeGrid');
-      MODES.forEach(function (m) {
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'mode-btn'; b.textContent = m.name;
-        b.addEventListener('click', function () {
-          state.mode = m.key; syncModeBtns(); presetSel.value = ''; saveState();
-          if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + m.name, false);
-        });
-        grid.appendChild(b); modeBtns[m.key] = b;
-      });
-    })();
-    function syncModeBtns() {
-      for (var k in modeBtns) modeBtns[k].classList.toggle('active', k === state.mode);
     }
 
-    /* 滑杆 */
     var sliderEls = {};
-    function buildSliders(list, hostId) {
-      var host = $(hostId);
-      list.forEach(function (s) {
-        var wrap = document.createElement('div'); wrap.className = 'ctl';
-        var head = document.createElement('div'); head.className = 'ctl-head';
-        var lab = document.createElement('label'); lab.textContent = s.label; lab.htmlFor = 'range-' + s.key;
-        if (s.unit) { var u = document.createElement('span'); u.className = 'unit'; u.textContent = s.unit; lab.appendChild(u); }
+    (function buildSliders() {
+      var host = $('sliders');
+      SLIDERS.forEach(function (s) {
+        var wrap = document.createElement('div');
+        wrap.className = 'ctl';
+        var head = document.createElement('div');
+        head.className = 'ctl-head';
+        var lab = document.createElement('label');
+        lab.textContent = s.label;
+        lab.htmlFor = 'range-' + s.key;
+        if (s.unit) {
+          var u = document.createElement('span');
+          u.className = 'unit'; u.textContent = s.unit;
+          lab.appendChild(u);
+        }
         head.appendChild(lab);
-        var body = document.createElement('div'); body.className = 'ctl-body';
+        var body = document.createElement('div');
+        body.className = 'ctl-body';
         var range = document.createElement('input');
-        range.type = 'range'; range.id = 'range-' + s.key; range.min = s.min; range.max = s.max; range.step = s.step;
+        range.type = 'range'; range.id = 'range-' + s.key;
+        range.min = s.min; range.max = s.max; range.step = s.step;
         range.setAttribute('aria-label', s.label);
         var num = document.createElement('input');
-        num.type = 'number'; num.id = 'num-' + s.key; num.min = s.min; num.max = s.max; num.step = s.step;
+        num.type = 'number'; num.id = 'num-' + s.key;
+        num.min = s.min; num.max = s.max; num.step = s.step;
         num.setAttribute('aria-label', s.label + '数值');
         body.appendChild(range); body.appendChild(num);
-        wrap.appendChild(head); wrap.appendChild(body); host.appendChild(wrap);
+        wrap.appendChild(head); wrap.appendChild(body);
+        host.appendChild(wrap);
         sliderEls[s.key] = { range: range, num: num, cfg: s };
-        range.addEventListener('input', function () { setParam(s.key, parseFloat(range.value), 'range'); });
-        num.addEventListener('change', function () { setParam(s.key, parseFloat(num.value), 'num'); });
+
+        range.addEventListener('input', function () {
+          setParam(s.key, parseFloat(range.value), 'range');
+        });
+        num.addEventListener('change', function () {
+          setParam(s.key, parseFloat(num.value), 'num');
+        });
       });
+    })();
+
+    function fmtVal(cfg, v) {
+      return cfg.dec === 0 ? String(Math.round(v)) : v.toFixed(cfg.dec);
     }
-    buildSliders(SLIDERS_BASE, 'slidersBase');
-    buildSliders(SLIDERS_RIPPLE, 'slidersRipple');
-    buildSliders(SLIDERS_OTHER, 'slidersOther');
-    function fmtVal(cfg, v) { return cfg.dec === 0 ? String(Math.round(v)) : v.toFixed(cfg.dec); }
     function setParam(key, v, src) {
-      var els = sliderEls[key]; if (!els || !isFinite(v)) { syncUI(); return; }
-      state[key] = Math.min(els.cfg.max, Math.max(els.cfg.min, v));
+      var cfg = null;
+      for (var j = 0; j < SLIDERS.length; j++) if (SLIDERS[j].key === key) cfg = SLIDERS[j];
+      if (!cfg || !isFinite(v)) { syncUI(); return; }
+      state[key] = Math.min(cfg.max, Math.max(cfg.min, v));
+      var els = sliderEls[key];
       if (src !== 'range') els.range.value = state[key];
-      if (src !== 'num') els.num.value = fmtVal(els.cfg, state[key]);
-      presetSel.value = ''; saveState();
+      if (src !== 'num') els.num.value = fmtVal(cfg, state[key]);
+      markCustom();
+      saveState();
     }
 
-    /* 颜色（手动拖动即时跟随，并接管司机） */
     var colorEls = {};
     ['c1', 'c2', 'c3'].forEach(function (key) {
       colorEls[key] = { picker: $(key), hex: $(key + 'hex') };
       colorEls[key].picker.addEventListener('input', function () {
-        state[key] = colorEls[key].picker.value.toUpperCase();
+        state[key] = colorEls[key].picker.value.toLowerCase();
         colorEls[key].hex.value = state[key];
-        if (key !== 'c3') takeManual(key);
-        if (CE.trans) CE.trans = null;
-        presetSel.value = ''; saveState();
+        markCustom(); saveState();
       });
       colorEls[key].hex.addEventListener('change', function () {
         var v = colorEls[key].hex.value.trim();
         if (v.charAt(0) !== '#') v = '#' + v;
         if (validHex(v)) {
-          state[key] = v.toUpperCase();
-          colorEls[key].picker.value = state[key]; colorEls[key].hex.value = state[key];
-          if (key !== 'c3') takeManual(key);
-          if (CE.trans) CE.trans = null;
-          presetSel.value = ''; saveState();
-        } else { colorEls[key].hex.value = state[key]; toast('颜色值格式不对，应为 #RRGGBB', true); }
+          state[key] = v.toLowerCase();
+          colorEls[key].picker.value = state[key];
+          colorEls[key].hex.value = state[key];
+          markCustom(); saveState();
+        } else {
+          colorEls[key].hex.value = state[key];
+          toast('颜色值格式不对，应为 #RRGGBB', true);
+        }
       });
     });
-    function takeManual(ch) {
-      if (CE.car.on) { CE.car.on = false; CE.car.from = null; $('carOn').checked = false; }
-      if (CE.driver[ch] === 'track') { CE.track[ch].on = false; $(ch === 'c1' ? 'track1On' : 'track2On').checked = false; }
-      if (CE.driver[ch] === 'pool') { CE.pool[ch].on = false; CE.pool[ch].cur = null; $(ch === 'c1' ? 'pool1On' : 'pool2On').checked = false; }
-      CE.driver[ch] = 'manual';
-      updateDriverLabels();
-    }
 
+    function markCustom() { presetSel.value = ''; }
     function syncUI() {
-      syncModeBtns();
+      modeSel.value = state.mode;
       for (var key in sliderEls) {
         var els = sliderEls[key];
         els.range.value = state[key];
@@ -987,113 +820,28 @@
       });
     }
 
-    /* ---------------- 预设应用（颜色 0.8s 平滑过渡） ---------------- */
-    function applyParams(newState, label) {
-      startColorTransition(newState);
-      var keepMode = newState.mode;
-      Object.assign(state, newState);
-      state.mode = keepMode;
-      allDriversManual();
-      syncUI(); saveState();
-      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + modeName(state.mode), false);
-      toast(label);
-    }
-    $('presetBattleBtn').addEventListener('click', function () {
-      presetSel.value = '';
-      applyParams(Object.assign({}, DEFAULTS), '已应用战斗定版（绛红涟漪）');
-    });
-    $('presetMenuBtn').addEventListener('click', function () {
-      presetSel.value = '';
-      applyParams(Object.assign({}, MENU_PRESET), '已应用主菜单定版（蓝白旋涡）');
+    modeSel.addEventListener('change', function () {
+      state.mode = parseInt(modeSel.value, 10) || 0;
+      markCustom(); saveState();
+      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
     });
     presetSel.addEventListener('change', function () {
       if (presetSel.value === '') return;
       var p = PRESETS[parseInt(presetSel.value, 10)];
-      var ns = Object.assign({}, DEFAULTS, { mode: p.mode, c1: p.c1, c2: p.c2, c3: p.c3, contrast: p.contrast, pixelSizeFac: p.pixelSizeFac });
-      applyParams(ns, '已应用预设「' + p.name + '」');
-      presetSel.value = String(PRESETS.indexOf(p));
+      state = sanitize(p);
+      syncUI(); saveState();
+      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
+      toast('已应用预设「' + p.name + '」');
     });
-
-    /* ---------------- 颜色引擎 UI ---------------- */
-    function buildTrackFrames(ch, hostId) {
-      var host = $(hostId), tr = CE.track[ch];
-      tr.frames.forEach(function (f, i) {
-        var row = document.createElement('div'); row.className = 'frame-row';
-        var pct = document.createElement('span'); pct.className = 'pct'; pct.textContent = f.p + '%';
-        var col = document.createElement('input'); col.type = 'color'; col.value = f.c;
-        col.setAttribute('aria-label', '关键帧颜色 ' + f.p + '%');
-        var hex = document.createElement('input'); hex.type = 'text'; hex.value = f.c; hex.spellcheck = false;
-        col.addEventListener('input', function () { f.c = col.value.toUpperCase(); hex.value = f.c; saveCE(); });
-        hex.addEventListener('change', function () {
-          var v = hex.value.trim(); if (v.charAt(0) !== '#') v = '#' + v;
-          if (validHex(v)) { f.c = v.toUpperCase(); col.value = f.c; hex.value = f.c; saveCE(); }
-          else hex.value = f.c;
-        });
-        row.appendChild(pct); row.appendChild(col); row.appendChild(hex);
-        host.appendChild(row);
-      });
-    }
-    buildTrackFrames('c1', 'track1Frames');
-    buildTrackFrames('c2', 'track2Frames');
-    function bindMini(rangeId, valId, get, set, fmt) {
-      var r = $(rangeId), v = $(valId);
-      r.value = get(); v.textContent = fmt(get());
-      r.addEventListener('input', function () { set(parseFloat(r.value)); v.textContent = fmt(get()); });
-    }
-    bindMini('track1Dur', 'track1DurVal', function () { return CE.track.c1.dur; }, function (x) { CE.track.c1.dur = x; saveCE(); }, function (x) { return x + 's'; });
-    bindMini('track2Dur', 'track2DurVal', function () { return CE.track.c2.dur; }, function (x) { CE.track.c2.dur = x; saveCE(); }, function (x) { return x + 's'; });
-    bindMini('pool1Dwell', 'pool1DwellVal', function () { return CE.pool.c1.dwell; }, function (x) { CE.pool.c1.dwell = x; saveCE(); }, function (x) { return x.toFixed(1) + 's'; });
-    bindMini('pool1Fade', 'pool1FadeVal', function () { return CE.pool.c1.fade; }, function (x) { CE.pool.c1.fade = x; saveCE(); }, function (x) { return x.toFixed(1) + 's'; });
-    bindMini('pool2Dwell', 'pool2DwellVal', function () { return CE.pool.c2.dwell; }, function (x) { CE.pool.c2.dwell = x; saveCE(); }, function (x) { return x.toFixed(1) + 's'; });
-    bindMini('pool2Fade', 'pool2FadeVal', function () { return CE.pool.c2.fade; }, function (x) { CE.pool.c2.fade = x; saveCE(); }, function (x) { return x.toFixed(1) + 's'; });
-    bindMini('carDwell', 'carDwellVal', function () { return CE.car.dwell; }, function (x) { CE.car.dwell = x; saveCE(); }, function (x) { return x + 's'; });
-    bindMini('carFade', 'carFadeVal', function () { return CE.car.fade; }, function (x) { CE.car.fade = x; saveCE(); }, function (x) { return x + 's'; });
-
-    function setTrack(ch, on) {
-      var tr = CE.track[ch];
-      tr.on = on;
-      if (on) {
-        if (CE.car.on) { CE.car.on = false; CE.car.from = null; $('carOn').checked = false; }
-        if (CE.pool[ch].on) { CE.pool[ch].on = false; CE.pool[ch].cur = null; $(ch === 'c1' ? 'pool1On' : 'pool2On').checked = false; }
-        CE.driver[ch] = 'track'; CE.trans = null;
-      } else if (CE.driver[ch] === 'track') CE.driver[ch] = 'manual';
-      updateDriverLabels();
-    }
-    function setPool(ch, on) {
-      var P = CE.pool[ch];
-      P.on = on; P.cur = null; P.phase = 'dwell'; P.timer = 0;
-      if (on) {
-        if (CE.car.on) { CE.car.on = false; CE.car.from = null; $('carOn').checked = false; }
-        if (CE.track[ch].on) { CE.track[ch].on = false; $(ch === 'c1' ? 'track1On' : 'track2On').checked = false; }
-        CE.driver[ch] = 'pool'; CE.trans = null;
-      } else if (CE.driver[ch] === 'pool') CE.driver[ch] = 'manual';
-      updateDriverLabels();
-    }
-    $('track1On').addEventListener('change', function () { setTrack('c1', this.checked); });
-    $('track2On').addEventListener('change', function () { setTrack('c2', this.checked); });
-    $('pool1On').addEventListener('change', function () { setPool('c1', this.checked); });
-    $('pool2On').addEventListener('change', function () { setPool('c2', this.checked); });
-    $('carOn').addEventListener('change', function () {
-      CE.car.on = this.checked;
-      CE.car.from = null; CE.car.phase = 'dwell'; CE.car.timer = 0;
-      if (this.checked) {
-        CE.track.c1.on = CE.track.c2.on = false;
-        CE.pool.c1.on = CE.pool.c2.on = false; CE.pool.c1.cur = CE.pool.c2.cur = null;
-        CE.driver.c1 = 'carousel'; CE.driver.c2 = 'carousel'; CE.trans = null;
-        $('track1On').checked = $('track2On').checked = $('pool1On').checked = $('pool2On').checked = false;
-      } else { CE.driver.c1 = 'manual'; CE.driver.c2 = 'manual'; }
-      updateDriverLabels();
-    });
-    function syncCEUI() {
-      $('track1On').checked = CE.track.c1.on; $('track2On').checked = CE.track.c2.on;
-      $('pool1On').checked = CE.pool.c1.on; $('pool2On').checked = CE.pool.c2.on;
-      $('carOn').checked = CE.car.on;
-    }
 
     /* ---------------- 暂停 / 面板 ---------------- */
     var pauseBtn = $('pauseBtn');
-    function setPaused(v) { paused = v; pauseBtn.textContent = paused ? '继续' : '暂停'; }
+    function setPaused(v) {
+      paused = v;
+      pauseBtn.textContent = paused ? '继续' : '暂停';
+    }
     pauseBtn.addEventListener('click', function () { setPaused(!paused); });
+
     var panel = $('panel'), panelToggle = $('panelToggle');
     function setPanel(open) {
       panel.classList.toggle('hidden', !open);
@@ -1101,63 +849,82 @@
     }
     $('collapseBtn').addEventListener('click', function () { setPanel(false); });
     panelToggle.addEventListener('click', function () { setPanel(true); });
+
     document.addEventListener('keydown', function (e) {
       var tag = (e.target && e.target.tagName) || '';
       var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-      if (e.code === 'Space' && !typing) { e.preventDefault(); setPaused(!paused); }
-      else if ((e.key === 'h' || e.key === 'H') && !typing) setPanel(panel.classList.contains('hidden'));
+      if (e.code === 'Space' && !typing) {
+        e.preventDefault();
+        setPaused(!paused);
+      } else if ((e.key === 'h' || e.key === 'H') && !typing) {
+        setPanel(panel.classList.contains('hidden'));
+      }
     });
 
     /* ---------------- 导出 / 导入 ---------------- */
     var jsonBox = $('jsonBox');
+    function stateJSON() {
+      var o = { mode: state.mode, c1: state.c1, c2: state.c2, c3: state.c3 };
+      SLIDERS.forEach(function (s) { o[s.key] = Math.round(state[s.key] * 1000) / 1000; });
+      return o;
+    }
     $('copyJsonBtn').addEventListener('click', function () {
-      var text = JSON.stringify(stateToJSON(state), null, 2);
+      var text = JSON.stringify(stateJSON(), null, 2);
       jsonBox.value = text;
-      function done() { toast('参数 JSON 已复制（调参台同款格式）'); }
+      function done() { toast('参数 JSON 已复制到剪贴板'); }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done, function () {
           jsonBox.select();
-          try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，JSON 已填入下方文本框，可手动复制', true); }
+          try { document.execCommand('copy'); done(); }
+          catch (e) { toast('复制失败，JSON 已填入下方文本框，可手动复制', true); }
         });
       } else {
         jsonBox.select();
-        try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，JSON 已填入下方文本框，可手动复制', true); }
+        try { document.execCommand('copy'); done(); }
+        catch (e) { toast('复制失败，JSON 已填入下方文本框，可手动复制', true); }
       }
     });
     $('applyJsonBtn').addEventListener('click', function () {
       var raw;
-      try { raw = JSON.parse(jsonBox.value); } catch (e) { toast('JSON 解析失败：' + e.message, true); return; }
-      if (!raw || typeof raw !== 'object' || typeof raw.mode !== 'string') { toast('不是调参台格式的 JSON（缺 mode 字符串）', true); return; }
-      var ns = sanitize(raw);
-      startColorTransition(ns);
-      state = ns;
-      allDriversManual(); syncUI(); saveState();
-      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + modeName(state.mode), false);
+      try { raw = JSON.parse(jsonBox.value); }
+      catch (e) { toast('JSON 解析失败：' + e.message, true); return; }
+      if (!raw || typeof raw !== 'object') { toast('JSON 内容不是参数对象', true); return; }
+      state = sanitize(raw);
+      syncUI(); markCustom(); saveState();
+      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
       toast('已应用粘贴的 JSON 参数');
     });
+
     function download(blob, filename) {
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     }
+
     $('exportHtmlBtn').addEventListener('click', function () {
-      var snap = Object.assign({}, state, { c1: rgbToHex(eff.c1), c2: rgbToHex(eff.c2), c3: rgbToHex(eff.c3) });
       var parts = [];
       parts.push('<!doctype html>');
-      parts.push('<!-- 独立流体背景 · 由「旋涡背景编辑器」导出，MIT 开源，可自由用于个人与商业项目。 -->');
+      parts.push('<!--');
+      parts.push('  独立旋涡背景 · 由「旋涡背景编辑器」导出');
+      parts.push('  本文件中的着色器与参数均为原创实现，MIT 开源，可自由用于个人与商业项目。');
+      parts.push('  MIT License — Permission is hereby granted, free of charge, to any person');
+      parts.push('  obtaining a copy of this file to use, copy, modify and distribute it,');
+      parts.push('  subject to inclusion of this notice.');
+      parts.push('-->');
       parts.push('<html lang="zh-CN"><head><meta charset="utf-8" />');
       parts.push('<meta name="viewport" content="width=device-width, initial-scale=1" />');
-      parts.push('<title>流体背景</title>');
+      parts.push('<title>旋涡背景</title>');
       parts.push('<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style>');
       parts.push('</head><body>');
       parts.push('<canvas id="bg"></canvas>');
       parts.push('<script>');
-      parts.push('var PARAMS = ' + JSON.stringify(stateToJSON(snap)) + ';');
+      parts.push('var PARAMS = ' + JSON.stringify(stateJSON()) + ';');
       parts.push('var VERT = ' + JSON.stringify(VERT_SRC) + ';');
       parts.push('var FRAG = ' + JSON.stringify(FRAG_SRC) + ';');
-      parts.push('var MODES = ["vortex","ripple","wave","tide","rays","kaleido","splash"];');
       parts.push('var canvas = document.getElementById("bg");');
       parts.push('var gl = canvas.getContext("webgl", { antialias: false });');
       parts.push('if (!gl) { document.body.innerHTML = "<p style=\\"color:#fff;font-family:sans-serif;padding:2em\\">此设备不支持 WebGL，背景无法渲染。</p>"; }');
@@ -1171,77 +938,83 @@
       parts.push('  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);');
       parts.push('  var loc = gl.getAttribLocation(prog, "a_pos"); gl.enableVertexAttribArray(loc);');
       parts.push('  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);');
-      parts.push('  var U = {}; ' + JSON.stringify(UNIFORMS) + '.forEach(function(n){ U[n] = gl.getUniformLocation(prog, n); });');
+      parts.push('  var U = {}; ["u_res","u_time","u_mode","u_c1","u_c2","u_c3","u_contrast","u_spin","u_scale","u_warp","u_blocks"].forEach(function(n){ U[n] = gl.getUniformLocation(prog, n); });');
       parts.push('  function rgb(h){ return [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255]; }');
       parts.push('  var C1 = rgb(PARAMS.c1), C2 = rgb(PARAMS.c2), C3 = rgb(PARAMS.c3);');
+      parts.push('  var BLOCKS = Math.round(24 + (PARAMS.pixelFac - 100) / 1900 * 476);');
       parts.push('  var start = performance.now();');
       parts.push('  (function frame(now) {');
       parts.push('    var w = canvas.clientWidth, h = canvas.clientHeight;');
       parts.push('    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }');
       parts.push('    gl.viewport(0, 0, w, h);');
-      parts.push('    var et = (now - start) / 1000 * PARAMS.speed;');
       parts.push('    gl.uniform2f(U.u_res, w, h);');
-      parts.push('    gl.uniform1f(U.u_time, et);');
-      parts.push('    gl.uniform1f(U.u_spin_time, et);');
-      parts.push('    gl.uniform1i(U.u_mode, MODES.indexOf(PARAMS.mode));');
+      parts.push('    gl.uniform1f(U.u_time, (now - start) / 1000 * PARAMS.speed);');
+      parts.push('    gl.uniform1i(U.u_mode, PARAMS.mode);');
       parts.push('    gl.uniform3f(U.u_c1, C1[0], C1[1], C1[2]);');
       parts.push('    gl.uniform3f(U.u_c2, C2[0], C2[1], C2[2]);');
       parts.push('    gl.uniform3f(U.u_c3, C3[0], C3[1], C3[2]);');
       parts.push('    gl.uniform1f(U.u_contrast, PARAMS.contrast);');
-      parts.push('    gl.uniform1f(U.u_spin_amount, PARAMS.spinAmount);');
-      parts.push('    gl.uniform1f(U.u_spin_ease, PARAMS.spinEase);');
-      parts.push('    gl.uniform1f(U.u_pixelFac, PARAMS.pixelSizeFac);');
-      parts.push('    gl.uniform1f(U.u_m_amp, PARAMS.mAmp);');
-      parts.push('    gl.uniform1f(U.u_m_rate, PARAMS.mRate);');
-      parts.push('    gl.uniform1f(U.u_r_freq, PARAMS.ripple.freq);');
-      parts.push('    gl.uniform1f(U.u_r_rate, PARAMS.ripple.rate);');
-      parts.push('    gl.uniform1f(U.u_r_amp, PARAMS.ripple.amp);');
-      parts.push('    gl.uniform1f(U.u_flash, PARAMS.flash);');
-      parts.push('    gl.uniform2f(U.u_offset, PARAMS.offset[0], PARAMS.offset[1]);');
+      parts.push('    gl.uniform1f(U.u_spin, PARAMS.spin);');
+      parts.push('    gl.uniform1f(U.u_scale, PARAMS.scale);');
+      parts.push('    gl.uniform1f(U.u_warp, PARAMS.warp);');
+      parts.push('    gl.uniform1f(U.u_blocks, BLOCKS);');
       parts.push('    gl.drawArrays(gl.TRIANGLES, 0, 3);');
       parts.push('    requestAnimationFrame(frame);');
       parts.push('  })(start);');
       parts.push('}');
       parts.push('<' + '/script>');
       parts.push('</body></html>');
-      download(new Blob([parts.join('\n')], { type: 'text/html;charset=utf-8' }), 'fluid-background.html');
+      var html = parts.join('\n');
+      download(new Blob([html], { type: 'text/html;charset=utf-8' }), 'vortex-background.html');
       toast('独立 HTML 背景已导出，可直接双击打开或嵌入网页');
     });
+
     $('pngBtn').addEventListener('click', function () {
       var src = fallbackActive ? swCanvas : glCanvas;
-      if (!fallbackActive && glOK) drawGL(src.width, src.height);
+      if (!fallbackActive && glOK) drawGL(src.width, src.height); /* 捕获前重绘一帧确保画面最新 */
       if (src.toBlob) {
         src.toBlob(function (blob) {
-          if (blob) { download(blob, 'fluid-bg.png'); toast('PNG 快照已导出'); }
+          if (blob) { download(blob, 'vortex-bg.png'); toast('PNG 快照已导出'); }
           else toast('PNG 导出失败', true);
         }, 'image/png');
       } else {
         try {
           var a = document.createElement('a');
-          a.href = src.toDataURL('image/png'); a.download = 'fluid-bg.png';
+          a.href = src.toDataURL('image/png'); a.download = 'vortex-bg.png';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
           toast('PNG 快照已导出');
         } catch (e) { toast('PNG 导出失败：' + e.message, true); }
       }
     });
+
     $('randomBtn').addEventListener('click', function () {
-      function rndHex() { var h = Math.floor(Math.random() * 0xffffff).toString(16); while (h.length < 6) h = '0' + h; return ('#' + h).toUpperCase(); }
+      function rndHex() {
+        var h = Math.floor(Math.random() * 0xffffff).toString(16);
+        while (h.length < 6) h = '0' + h;
+        return '#' + h;
+      }
       function rnd(min, max) { return Math.round((min + Math.random() * (max - min)) * 100) / 100; }
-      var ns = sanitize({
-        mode: MODES[Math.floor(Math.random() * 7)].key,
+      state = sanitize({
+        mode: Math.floor(Math.random() * 7),
         c1: rndHex(), c2: rndHex(), c3: rndHex(),
-        contrast: rnd(2.2, 3.4), spinAmount: rnd(0.3, 0.9), speed: rnd(0.35, 0.9),
-        pixelSizeFac: Math.round(rnd(900, 2000) / 10) * 10, spinEase: rnd(0.2, 1.2),
-        mAmp: 1, mRate: 1, ripple: { freq: 22, rate: 6, amp: 0.05 }, flash: 0, offset: [0, 0]
+        contrast: rnd(0.8, 3.2), spin: rnd(0, 1.6), speed: rnd(0.15, 1.6),
+        scale: rnd(0.6, 2.2), warp: rnd(0, 1.8),
+        pixelFac: Math.round(rnd(400, 2000) / 10) * 10
       });
-      applyParams(ns, '已随机生成一组参数');
-    });
-    $('resetBtn').addEventListener('click', function () {
-      applyParams(Object.assign({}, DEFAULTS), '已恢复默认（战斗定版）');
-      setPaused(false);
+      syncUI(); markCustom(); saveState();
+      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
+      toast('已随机生成一组参数');
     });
 
-    /* ---------------- 主循环 ---------------- */
+    $('resetBtn').addEventListener('click', function () {
+      state = sanitize(DEFAULTS);
+      syncUI(); markCustom(); saveState();
+      setPaused(false);
+      if (!fallbackActive) setStatus('<b>WebGL 渲染中</b> · ' + MODES[state.mode], false);
+      toast('已恢复默认参数');
+    });
+
+    /* ---------------- 尺寸与主循环 ---------------- */
     function fitCanvas(cv) {
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var w = Math.max(2, Math.round(window.innerWidth * dpr));
@@ -1249,31 +1022,34 @@
       if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
       return [w, h];
     }
-    var lastTs = 0, fpsCount = 0, fpsLast = performance.now(), carLabelTick = 0;
+    var lastTs = 0, fpsCount = 0, fpsLast = performance.now();
     function frame(ts) {
       requestAnimationFrame(frame);
       var dt = lastTs ? Math.min(0.1, (ts - lastTs) / 1000) : 0.016;
       lastTs = ts;
-      wallTime += dt;
-      if (!paused) simTime += dt;
-      computeEff(dt);
-      if (fallbackActive) { var s = fitCanvas(swCanvas); drawFallback(s[0], s[1]); }
-      else if (glOK) { var g = fitCanvas(glCanvas); drawGL(g[0], g[1]); }
-      carLabelTick += dt;
-      if (carLabelTick > 0.5) { carLabelTick = 0; if (CE.car.on) updateDriverLabels(); }
+      if (!paused) simTime += dt * state.speed;
+      if (fallbackActive) {
+        var s = fitCanvas(swCanvas);
+        drawFallback(s[0], s[1]);
+      } else if (glOK) {
+        var g = fitCanvas(glCanvas);
+        drawGL(g[0], g[1]);
+      }
       fpsCount++;
       if (ts - fpsLast >= 600) {
-        fpsText.textContent = Math.round(fpsCount * 1000 / (ts - fpsLast)) + ' fps';
+        var fps = Math.round(fpsCount * 1000 / (ts - fpsLast));
+        fpsText.textContent = fps + ' fps';
         fpsCount = 0; fpsLast = ts;
       }
     }
 
     /* ---------------- 启动 ---------------- */
     syncUI();
-    syncCEUI();
-    updateDriverLabels();
-    if (initGL()) useGLPath();
-    else startFallback(glError || 'WebGL 不可用');
+    if (initGL()) {
+      useGLPath();
+    } else {
+      startFallback(glError || 'WebGL 不可用');
+    }
     requestAnimationFrame(frame);
     </script>
   </body>
