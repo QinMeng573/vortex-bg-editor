@@ -16,7 +16,7 @@ The v1 editor is already live: https://qinmeng573.github.io/vortex-bg-editor/
 
 - **18 presets** (5 new): Mint Battle A2, Solar Eclipse, Glacier, Violet Void, Matcha Garden — alongside the original Cathedral Blue-White, Crimson Ripple, Rose Window, Black-Gold Throne, Blood Moon and more
 - **`presets.json`** — every preset as data (mode, 3 colors, contrast, spin, speed, scale, warp, pixel factor), ready to drop into your own engine or shader port
-- **7 motion modes**: vortex · ripple · wave · tide · rays · kaleido · splash
+- **7 motion modes**: vortex · ripple · smoke · waves · kaleido · tunnel · rose
 
 ## Use the presets in your game
 

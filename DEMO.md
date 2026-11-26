@@ -11,11 +11,11 @@ Pick each preset from the dropdown, in this order — it tells a story:
 | 1 | Cathedral Blue-White | vortex | The original. Contrast 3.0, silky pixels (2000). A game main menu that shipped like this. |
 | 2 | Mint Battle A2 | ripple | Same engine, battle variant: mint + lemon on deep teal, contrast dropped to 1.5 so it sits *behind* gameplay. |
 | 3 | Crimson Ripple | ripple | The A2's predecessor — crimson + gold. Kept for comparison; it lost to mint in playtesting. |
-| 4 | Rose Window | kaleido | Kaleidoscope mode: the vortex becomes a cathedral rose window. |
-| 5 | Solar Eclipse | rays | Radiating light, near-static. For menus that must not distract. |
-| 6 | Violet Void | kaleido | High warp (0.9) — the pattern starts to breathe. |
+| 4 | Rose Window | rose | Rose mode: the vortex opens into a cathedral rose window. |
+| 5 | Solar Eclipse | kaleido | Dark core, golden rim — a kaleidoscopic eclipse. |
+| 6 | Violet Void | rose | High warp (0.9) — the rose pattern starts to breathe. |
 | 7 | Blood Moon | vortex | Spin 0.75: noticeably faster rotation, same shader. |
-| 8 | Ink & Paper | rays | Greyscale. Proof the effect is structure, not color. |
+| 8 | Ink & Paper | kaleido | Greyscale. Proof the effect is structure, not color. |
 
 Then drag the **contrast**, **spin**, and **pixel factor** sliders on any preset:
 pixel factor 700 turns the same image into chunky retro grain; 2000 makes it silk.
